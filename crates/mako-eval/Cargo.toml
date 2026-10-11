@@ -1,0 +1,16 @@
+[package]
+name = "mako-eval"
+description = "Paired-seed, seat-swapped policy evaluation with confidence intervals"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+mako-core = { path = "../mako-core" }
+mako-cfr = { path = "../mako-cfr" }
+
+[lints]
+workspace = true

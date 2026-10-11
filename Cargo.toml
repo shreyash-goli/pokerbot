@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/mako-core",
+    "crates/mako-cfr",
+    "crates/mako-cli",
+    "crates/mako-analysis",
+    "crates/mako-eval",
+    "crates/mako-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["pokerbot contributors"]
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+debug = false
+lto = "thin"
+codegen-units = 1
