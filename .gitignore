@@ -1,0 +1,15 @@
+/target/
+/build/
+/dist/
+/pkg/
+/node_modules/
+/.next/
+*.mako
+*.ckpt
+*.cache
+*.log
+*.prof
+.env
+.env.*
+!.env.example
+.DS_Store
