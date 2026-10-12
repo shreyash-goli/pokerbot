@@ -8,6 +8,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // Scaffold: reference workspace dependencies so the crate graph is exercised.
 const _: &str = mako_core::VERSION;
 
+pub mod toy;
+
 #[cfg(test)]
 mod tests {
     #[test]
