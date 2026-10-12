@@ -1,8 +1,16 @@
-//! `mako-core` — placeholder crate created by M-00 (workspace scaffold).
+//! `mako-core` — heads-up no-limit hold'em engine primitives.
 //!
-//! Real functionality is added by later tasks in `docs/TASKS.json`.
+//! * [`card`] — cards and card sets (M-02)
+//! * [`deck`] — seeded portable shuffle and dealing (M-02)
+//! * [`rng`] — deterministic xoshiro256** RNG (M-02)
+//!
+//! The crate has no dependencies and builds for `wasm32-unknown-unknown`.
 
-/// Crate version, exposed so the scaffold has a testable item.
+pub mod card;
+pub mod deck;
+pub mod rng;
+
+/// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]
