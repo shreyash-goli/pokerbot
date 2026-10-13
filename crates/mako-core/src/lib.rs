@@ -2,6 +2,7 @@
 //!
 //! * [`card`] — cards and card sets (M-02)
 //! * [`deck`] — seeded portable shuffle and dealing (M-02)
+//! * [`eval`] — hand evaluator: categories, best five of seven (M-03)
 //! * [`rng`] — deterministic xoshiro256** RNG (M-02)
 //! * [`rules`] — betting rules, legal actions, chip accounting (M-01)
 //!
@@ -9,6 +10,7 @@
 
 pub mod card;
 pub mod deck;
+pub mod eval;
 pub mod rng;
 pub mod rules;
 
