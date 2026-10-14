@@ -3,8 +3,10 @@
 //! * [`action`] — seats, action records, action errors (M-04)
 //! * [`card`] — cards and card sets (M-02)
 //! * [`deck`] — seeded portable shuffle and dealing (M-02)
+//! * [`events`] — replayable event stream with per-viewer visibility (M-06)
 //! * [`eval`] — hand evaluator: categories, best five of seven (M-03)
 //! * [`observation`] — per-seat observation, the hidden-information boundary (M-04)
+//! * [`replay`] — hand logs, deterministic replay, public-state rebuild (M-06)
 //! * [`rng`] — deterministic xoshiro256** RNG (M-02)
 //! * [`rules`] — betting rules, legal actions, chip accounting (M-01)
 //! * [`state`] — authoritative hand state machine (M-04)
@@ -15,7 +17,9 @@ pub mod action;
 pub mod card;
 pub mod deck;
 pub mod eval;
+pub mod events;
 pub mod observation;
+pub mod replay;
 pub mod rng;
 pub mod rules;
 pub mod state;

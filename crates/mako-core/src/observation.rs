@@ -47,9 +47,61 @@ impl PlayerObservation {
     pub fn is_my_turn(&self) -> bool {
         self.to_act == Some(self.seat)
     }
+
+    /// The seat-independent public part of this observation.
+    pub fn public_view(&self) -> PublicView {
+        PublicView {
+            button: self.button,
+            street: self.street,
+            board: self.board.clone(),
+            pot: self.pot,
+            stacks: self.stacks,
+            street_contributions: self.street_contributions,
+            small_blind: self.small_blind,
+            big_blind: self.big_blind,
+            history: self.history.clone(),
+            to_act: self.to_act,
+            terminal: self.terminal,
+            payoffs: self.payoffs,
+        }
+    }
+
+    /// Rebuilds the observation for `seat` from a viewer-filtered event
+    /// stream alone (no deck, no `HandState`). The stream must contain the
+    /// seat's own `HoleCards` event. See [`crate::replay::PublicReplayer`].
+    pub fn from_events(
+        seat: Seat,
+        events: &[crate::events::HandEvent],
+    ) -> Result<PlayerObservation, crate::replay::ReplayError> {
+        crate::replay::observation_from_events(seat, events)
+    }
+}
+
+/// Public information about a hand: what a spectator knows. Contains no hole
+/// cards at all (showdown reveals are carried by events / observations).
+/// All arrays are indexed by [`Seat::index`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PublicView {
+    pub button: Seat,
+    pub street: Street,
+    pub board: Vec<Card>,
+    pub pot: Chips,
+    pub stacks: [Chips; 2],
+    pub street_contributions: [Chips; 2],
+    pub small_blind: Chips,
+    pub big_blind: Chips,
+    pub history: Vec<ActionRecord>,
+    pub to_act: Option<Seat>,
+    pub terminal: Option<TerminalReason>,
+    pub payoffs: Option<[i64; 2]>,
 }
 
 impl HandState {
+    /// The public view (identical for both seats and spectators).
+    pub fn public_view(&self) -> PublicView {
+        self.observation(self.button()).public_view()
+    }
+
     /// The observation for `seat`. This is the only state view player-facing
     /// code should use.
     pub fn observation(&self, seat: Seat) -> PlayerObservation {

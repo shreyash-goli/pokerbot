@@ -237,11 +237,24 @@ impl HandState {
 
     /// Net chip change per seat versus its starting stack, once terminal.
     /// Always sums to zero.
+    ///
+    /// **Indexed by [`Seat::index`]** (`[seat Zero, seat One]`), *not* by
+    /// position. `rules::Settlement` arrays are indexed by
+    /// `rules::Position` (`[Button, BigBlind]`); do not mix the two. Use
+    /// [`HandState::payoff`] to avoid indexing mistakes.
     pub fn payoffs(&self) -> Option<[i64; 2]> {
         self.finished.map(|f| f.payoffs)
     }
 
+    /// Net chip change for `seat` once terminal (see [`HandState::payoffs`]).
+    pub fn payoff(&self, seat: Seat) -> Option<i64> {
+        self.finished.map(|f| f.payoffs[seat.index()])
+    }
+
     /// Final stacks once terminal.
+    ///
+    /// **Indexed by [`Seat::index`]**, not by `rules::Position` (unlike
+    /// `rules::Settlement`).
     pub fn final_stacks(&self) -> Option<[Chips; 2]> {
         self.finished.map(|_| self.stacks)
     }
