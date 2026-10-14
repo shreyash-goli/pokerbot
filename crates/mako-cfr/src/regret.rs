@@ -113,6 +113,69 @@ pub struct UpdateConfig {
     pub regret_matching_plus: bool,
 }
 
+/// Iteration weighting (M-11), after Brown & Sandholm, "Solving
+/// Imperfect-Information Games via Discounted Regret Minimization", AAAI 2019
+/// (Linear CFR). With `t >= 1` the 1-based iteration number:
+///
+/// - `linear_averaging`: `S[a] += t · σ_t[a]` at opponent nodes (else weight 1).
+/// - `linear_regrets`: `R[a] += t · (u_t[a] − u_t(node))` at traverser nodes
+///   (else weight 1). Equivalent to Linear CFR's "multiply accumulated regrets
+///   by t/(t+1) each iteration", up to a positive per-iteration scale, which
+///   regret matching ignores.
+///
+/// The two flags are independent. Both off is plain ES-MCCFR.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Weighting {
+    /// Weight average-strategy contributions by `t`.
+    pub linear_averaging: bool,
+    /// Weight regret contributions by `t`.
+    pub linear_regrets: bool,
+}
+
+impl Weighting {
+    /// Strategy weight at iteration `t` (`t = 0` is treated as 1).
+    pub fn strategy_weight(self, t: u64) -> f64 {
+        if self.linear_averaging {
+            t.max(1) as f64
+        } else {
+            1.0
+        }
+    }
+
+    /// Regret weight at iteration `t` (`t = 0` is treated as 1).
+    pub fn regret_weight(self, t: u64) -> f64 {
+        if self.linear_regrets {
+            t.max(1) as f64
+        } else {
+            1.0
+        }
+    }
+}
+
+/// Packs update and weighting flags into a stable bitfield:
+/// bit 0 = RM+, bit 1 = linear averaging, bit 2 = linear regrets.
+pub fn flags_to_bits(update: UpdateConfig, weighting: Weighting) -> u32 {
+    u32::from(update.regret_matching_plus)
+        | u32::from(weighting.linear_averaging) << 1
+        | u32::from(weighting.linear_regrets) << 2
+}
+
+/// Inverse of [`flags_to_bits`]; `None` if unknown bits are set.
+pub fn flags_from_bits(bits: u32) -> Option<(UpdateConfig, Weighting)> {
+    if bits & !0b111 != 0 {
+        return None;
+    }
+    Some((
+        UpdateConfig {
+            regret_matching_plus: bits & 1 != 0,
+        },
+        Weighting {
+            linear_averaging: bits & 2 != 0,
+            linear_regrets: bits & 4 != 0,
+        },
+    ))
+}
+
 /// Traverser-node regret update: `R[a] += weight · (u[a] − u_node)` for
 /// legal `a`, where `u_node = Σ σ[a]·u[a]`. Returns `u_node`.
 ///

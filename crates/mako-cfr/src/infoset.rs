@@ -30,7 +30,8 @@ pub struct Entry {
 }
 
 impl Entry {
-    fn new(mask: LegalMask) -> Self {
+    /// Fresh zeroed entry.
+    pub fn new(mask: LegalMask) -> Self {
         Self {
             mask,
             regret: [0.0; NUM_SLOTS],
@@ -97,6 +98,20 @@ impl StrategyTable {
         self.keys.push(boxed);
         self.entries.push(Entry::new(mask));
         i
+    }
+
+    /// Append a fully populated entry (checkpoint restore). Returns `false`
+    /// and leaves the table unchanged if `key` is already present.
+    pub fn push_entry(&mut self, key: &[u8], entry: Entry) -> bool {
+        if self.index.contains_key(key) {
+            return false;
+        }
+        let i = u32::try_from(self.entries.len()).expect("table < 2^32");
+        let boxed: Box<[u8]> = key.into();
+        self.index.insert(boxed.clone(), i);
+        self.keys.push(boxed);
+        self.entries.push(entry);
+        true
     }
 
     /// Look up an existing key.

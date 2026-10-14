@@ -41,7 +41,7 @@ use crate::abstraction::key::{CardAbstraction, InfoKey, KEY_FORMAT_VERSION};
 use crate::abstraction::postflop::{AbstractionConfig, ConfigError, EquityAbstraction};
 use crate::infoset::StrategyTable;
 use crate::regret::{
-    NUM_SLOTS, UpdateConfig, accumulate_strategy, is_legal, mask_of, update_regrets,
+    NUM_SLOTS, UpdateConfig, Weighting, accumulate_strategy, is_legal, mask_of, update_regrets,
 };
 
 /// Trainer configuration.
@@ -57,6 +57,8 @@ pub struct TrainerConfig {
     pub cache_capacity: usize,
     /// Update-rule flags.
     pub update: UpdateConfig,
+    /// Iteration weighting (M-11); default is unweighted.
+    pub weighting: Weighting,
     /// Cross-check every fast-path key against `InfoKey::from_observation`
     /// (slow; for tests).
     pub verify_keys: bool,
@@ -71,6 +73,7 @@ impl TrainerConfig {
             seed,
             cache_capacity: 1 << 18,
             update: UpdateConfig::default(),
+            weighting: Weighting::default(),
             verify_keys: false,
         }
     }
@@ -91,6 +94,7 @@ impl TrainerConfig {
             seed,
             cache_capacity: 1 << 16,
             update: UpdateConfig::default(),
+            weighting: Weighting::default(),
             verify_keys: false,
         }
     }
@@ -209,10 +213,37 @@ impl Trainer {
         self.stats
     }
 
-    /// Weight for average-strategy accumulation this iteration. Plain
-    /// ES-MCCFR uses 1; M-11 hooks a linear schedule in here.
+    /// Weight for average-strategy accumulation this iteration
+    /// (see [`Weighting`]).
     pub fn strategy_weight(&self) -> f64 {
-        1.0
+        self.config.weighting.strategy_weight(self.iteration)
+    }
+
+    /// Weight for regret accumulation this iteration (see [`Weighting`]).
+    pub fn regret_weight(&self) -> f64 {
+        self.config.weighting.regret_weight(self.iteration)
+    }
+
+    /// Current RNG state (for checkpoints).
+    pub fn rng_state(&self) -> [u64; 4] {
+        self.rng.state()
+    }
+
+    /// Rebuild a trainer from checkpointed parts (M-11). The equity cache
+    /// starts empty, which does not affect results.
+    pub fn restore(
+        config: TrainerConfig,
+        table: StrategyTable,
+        rng_state: [u64; 4],
+        iteration: u64,
+        stats: TrainerStats,
+    ) -> Result<Self, ConfigError> {
+        let mut t = Self::new(config)?;
+        t.table = table;
+        t.rng = MakoRng::from_state(rng_state);
+        t.iteration = iteration;
+        t.stats = stats;
+        Ok(t)
     }
 
     fn hand_config(&self) -> HandConfig {
@@ -311,8 +342,9 @@ impl Trainer {
                 utils[a.kind.index()] = self.child_value(state, a.kind, traverser, hist, ctx);
             }
             let cfg = self.config.update;
+            let w = self.regret_weight();
             let e = self.table.entry_mut(idx);
-            update_regrets(&mut e.regret, mask, &sigma, &utils, 1.0, cfg)
+            update_regrets(&mut e.regret, mask, &sigma, &utils, w, cfg)
         } else {
             let w = self.strategy_weight();
             let e = self.table.entry_mut(idx);
