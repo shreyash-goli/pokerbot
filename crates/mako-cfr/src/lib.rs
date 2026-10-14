@@ -9,6 +9,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const _: &str = mako_core::VERSION;
 
 pub mod abstraction;
+pub mod equity;
 pub mod toy;
 
 #[cfg(test)]

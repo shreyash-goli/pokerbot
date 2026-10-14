@@ -2,6 +2,8 @@
 //!
 //! - [`preflop`]: the 169 preflop starting-hand classes.
 //! - [`history`]: public betting-history encoding.
+//! - [`postflop`]: equity buckets, [`AbstractionConfig`], bounded cache,
+//!   and the full [`EquityAbstraction`] (M-08).
 //! - [`key`]: [`InfoKey`] (street, position, card bucket, public history),
 //!   its stable bytes and portable FNV-1a hash, and the [`CardAbstraction`]
 //!   trait.
@@ -14,8 +16,10 @@
 
 pub mod history;
 pub mod key;
+pub mod postflop;
 pub mod preflop;
 
 pub use history::HistoryKey;
 pub use key::{CardAbstraction, InfoKey, PreflopClassAbstraction};
+pub use postflop::{AbstractionConfig, EquityAbstraction};
 pub use preflop::PreflopClass;
