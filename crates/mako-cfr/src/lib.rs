@@ -1,6 +1,10 @@
-//! `mako-cfr` — placeholder crate created by M-00 (workspace scaffold).
+//! `mako-cfr`: counterfactual regret minimization for heads-up NLHE.
 //!
-//! Real functionality is added by later tasks in `docs/TASKS.json`.
+//! * [`toy`]: Kuhn poker CFR / MCCFR reference (M-09)
+//! * [`abstraction`]: preflop classes, history encoding, info keys, postflop
+//!   equity buckets (M-07, M-08)
+//! * [`equity`]: equity vs a random hand, suit canonicalization (M-08)
+//! * [`regret`], [`infoset`], [`traverse`]: external-sampling MCCFR (M-10)
 
 /// Crate version, exposed so the scaffold has a testable item.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -10,7 +14,10 @@ const _: &str = mako_core::VERSION;
 
 pub mod abstraction;
 pub mod equity;
+pub mod infoset;
+pub mod regret;
 pub mod toy;
+pub mod traverse;
 
 #[cfg(test)]
 mod tests {
