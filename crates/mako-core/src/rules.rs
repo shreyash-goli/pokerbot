@@ -38,6 +38,8 @@ pub enum RulesError {
     ConservationViolated { expected: u64, actual: u64 },
     /// Per-hand payoffs do not sum to zero.
     NotZeroSum { sum: i64 },
+    /// A hand contribution exceeds [`MAX_STARTING_STACK`] (would overflow).
+    ContributionOutOfRange(Chips),
 }
 
 impl fmt::Display for RulesError {
@@ -55,6 +57,9 @@ impl fmt::Display for RulesError {
                 )
             }
             RulesError::NotZeroSum { sum } => write!(f, "payoffs sum to {sum}, not zero"),
+            RulesError::ContributionOutOfRange(c) => {
+                write!(f, "hand contribution {c} exceeds the maximum stack")
+            }
         }
     }
 }
@@ -541,10 +546,25 @@ pub struct Settlement {
 /// the contested pot is split with the odd chip (if any) to the big blind;
 /// heads-up with no antes the contested pot is always even, so in practice
 /// ties split exactly.
+///
+/// # Panics
+/// Panics if a contribution exceeds [`MAX_STARTING_STACK`]; use
+/// [`try_settle`] to get an error instead.
 pub fn settle(contributions: [Chips; 2], result: HandResult) -> Settlement {
+    try_settle(contributions, result).expect("contribution within MAX_STARTING_STACK")
+}
+
+/// Checked [`settle`]: rejects any contribution above
+/// [`MAX_STARTING_STACK`], which guarantees `2 * min(contributions)` and
+/// every award fit in [`Chips`]. Intermediate sums use `u64`/`i64`.
+pub fn try_settle(contributions: [Chips; 2], result: HandResult) -> Result<Settlement, RulesError> {
+    if let Some(&c) = contributions.iter().find(|&&c| c > MAX_STARTING_STACK) {
+        return Err(RulesError::ContributionOutOfRange(c));
+    }
     let refunds = unmatched_refund(contributions);
-    let matched = contributions[0].min(contributions[1]);
-    let contested_pot = matched * 2;
+    let matched = u64::from(contributions[0].min(contributions[1]));
+    // <= 2 * (u32::MAX / 4) < u32::MAX, so the conversion cannot fail.
+    let contested_pot = Chips::try_from(2 * matched).expect("bounded by MAX_STARTING_STACK");
     let mut awards = [0; 2];
     match result {
         HandResult::Fold { folder } => awards[folder.other().index()] = contested_pot,
@@ -558,12 +578,12 @@ pub fn settle(contributions: [Chips; 2], result: HandResult) -> Settlement {
     }
     let payoffs =
         [0, 1].map(|i| i64::from(refunds[i]) + i64::from(awards[i]) - i64::from(contributions[i]));
-    Settlement {
+    Ok(Settlement {
         refunds,
         contested_pot,
         awards,
         payoffs,
-    }
+    })
 }
 
 /// Checks `stacks[0] + stacks[1] + pot == 2 * starting_stack`.
@@ -588,5 +608,44 @@ pub fn check_zero_sum(payoffs: [i64; 2]) -> Result<(), RulesError> {
         Ok(())
     } else {
         Err(RulesError::NotZeroSum { sum })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settle_rejects_overflowing_contributions() {
+        let big = MAX_STARTING_STACK + 1;
+        let r = HandResult::Showdown { winner: None };
+        assert_eq!(
+            try_settle([big, big], r),
+            Err(RulesError::ContributionOutOfRange(big))
+        );
+        assert_eq!(
+            try_settle([u32::MAX, 5], r),
+            Err(RulesError::ContributionOutOfRange(u32::MAX))
+        );
+        // Largest allowed contributions settle without overflow.
+        let m = MAX_STARTING_STACK;
+        let st = try_settle([m, m], r).unwrap();
+        assert_eq!(st.contested_pot, 2 * m);
+        assert_eq!(st.awards, [m, m]);
+        assert_eq!(st.payoffs, [0, 0]);
+        let st = try_settle(
+            [m, m],
+            HandResult::Fold {
+                folder: Position::Button,
+            },
+        )
+        .unwrap();
+        assert_eq!(st.payoffs, [-i64::from(m), i64::from(m)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "MAX_STARTING_STACK")]
+    fn settle_panics_on_overflowing_contributions() {
+        settle([u32::MAX, u32::MAX], HandResult::Showdown { winner: None });
     }
 }

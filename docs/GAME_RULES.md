@@ -134,6 +134,24 @@ equal at the start of every hand, a player making a short all-in raise is
 all-in, so the opponent is also blocked by `opp_stack == 0`; the reopening
 flag is kept for correctness with unequal stacks.
 
+State-machine formulation (M-04, `state.rs`): a seat **needs to act** iff it
+has chips behind, its street contribution does not exceed the opponent's, and
+either it is facing chips (`street_c < opp_street_c`) or it has not yet acted
+this street while the opponent still has chips behind. After every non-fold
+action the opponent acts if it needs to; otherwise the round closes. At the
+start of a round (including preflop right after the blinds) the first actor
+of §2 acts if it needs to, else the other seat, else the round closes
+immediately. This covers blinds that put a player all-in: e.g. a big blind
+all-in from posting still lets the button fold or call, and a button all-in
+from posting the small blind goes straight to the runout with the big
+blind's excess refunded (§7.2).
+
+When a round closes: if either player is all-in, the remaining board is
+dealt and the hand goes to showdown with no further actions; otherwise the
+next street begins (or showdown after the river). The public action history
+records voluntary actions only; blinds are implied by the config and button.
+The API reports street `Showdown` for every terminal state, including a fold.
+
 ## 7. Settlement
 
 1. **Fold**: the other player wins the contested pot.
