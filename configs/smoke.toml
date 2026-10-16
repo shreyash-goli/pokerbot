@@ -1,0 +1,40 @@
+# Mako smoke-training configuration (M-13).
+#
+# Purpose: exercise the full train -> checkpoint -> export -> load pipeline
+# with a small, reproducible, from-scratch MCCFR policy at 20 big blinds.
+# This is a plumbing smoke test, NOT a competitive policy: there is no claim
+# of strength, Nash equilibrium or GTO play. Budget: docs/PROGRESS.md
+# ("Compute budget for M-13 smoke training").
+
+[rules]
+depth_bb = 20          # 20 BB: blinds 1/2, 40-chip starting stacks
+small_blind = 1
+big_blind = 2
+
+[abstraction]
+# Equity-vs-random-hand buckets (coarse; see crates/mako-cfr/src/abstraction/postflop.rs).
+flop_buckets = 8
+turn_buckets = 8
+river_buckets = 8
+flop_samples = 500
+turn_samples = 500     # sampled turn equity (exact turn costs ~0.6 ms per bucket)
+seed = 1296126799      # 0x4D41534F; NOT AbstractionConfig::default() (0x4D414B4F). Consumers must build the abstraction from artifact metadata or this file.
+
+[train]
+seed = 20261115
+iterations = 500_000   # ~5k it/s measured (20k-iteration calibration) -> ~100 s release
+checkpoint_every = 100_000
+max_wall_secs = 300    # hard budget cap per run
+# Linear averaging (Brown & Sandholm 2019) discounts early, near-uniform
+# strategies in the average. Regrets stay unweighted (plain ES-MCCFR).
+linear_averaging = true
+linear_regrets = false
+regret_matching_plus = false
+cache_capacity = 262_144
+
+[output]
+dir = "artifacts"
+artifact = "smoke_20bb.mako"
+checkpoint = "smoke_20bb.ckpt"
+manifest = "smoke_20bb.manifest.json"
+label = "smoke: trained for plumbing, not competition"

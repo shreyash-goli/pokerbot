@@ -7,6 +7,7 @@
 //! * [`regret`], [`infoset`], [`traverse`]: external-sampling MCCFR (M-10)
 //! * [`checkpoint`], [`train`]: linear weighting, bounded resumable training (M-11)
 //! * [`artifact`]: versioned `.mako` average-strategy artifact and policy reader (M-12)
+//! * [`config`]: strict training-config parser used by `mako-train` (M-13)
 
 /// Crate version, exposed so the scaffold has a testable item.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -17,6 +18,7 @@ const _: &str = mako_core::VERSION;
 pub mod abstraction;
 pub mod artifact;
 pub mod checkpoint;
+pub mod config;
 pub mod equity;
 pub mod infoset;
 pub mod regret;
