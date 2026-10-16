@@ -8,6 +8,7 @@
 //! * [`checkpoint`], [`train`]: linear weighting, bounded resumable training (M-11)
 //! * [`artifact`]: versioned `.mako` average-strategy artifact and policy reader (M-12)
 //! * [`config`]: strict training-config parser used by `mako-train` (M-13)
+//! * [`infer`]: observation-only agents: CFR policy inference and baseline (M-14)
 
 /// Crate version, exposed so the scaffold has a testable item.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -20,6 +21,7 @@ pub mod artifact;
 pub mod checkpoint;
 pub mod config;
 pub mod equity;
+pub mod infer;
 pub mod infoset;
 pub mod regret;
 pub mod toy;

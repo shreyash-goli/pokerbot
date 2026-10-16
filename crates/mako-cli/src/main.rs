@@ -4,8 +4,11 @@ use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mako_cli::args::{self, BotKind, Command};
+use std::path::Path;
+
+use mako_cli::args::{self, Command};
 use mako_cli::game::{self, AutoPlayer, HumanSeat, SessionConfig};
+use mako_cli::opponent;
 use mako_cli::render::Style;
 
 fn clock_seed() -> u64 {
@@ -32,10 +35,6 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match opts.bot {
-        BotKind::Baseline => {}
-    }
-
     let no_color_env = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
     let style = Style {
         color: !opts.no_color && !no_color_env && io::stdout().is_terminal(),
@@ -46,12 +45,24 @@ fn main() -> ExitCode {
         depth: opts.depth,
         style,
     };
+    let mut opp = match opponent::select(
+        opts.bot,
+        opts.strategy.as_deref().map(Path::new),
+        cfg.depth,
+        game::bot_seed(cfg.seed),
+    ) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("mako: error: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let human = match opts.auto {
         Some(p) => HumanSeat::Auto(AutoPlayer::new(p, cfg.seed)),
         None => HumanSeat::Lines(io::stdin().lock()),
     };
     let mut out = io::stdout().lock();
-    match game::run_session(&cfg, human, &mut out) {
+    match game::run_session(&cfg, human, &mut opp, &mut out) {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {

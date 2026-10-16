@@ -274,3 +274,67 @@ fn artifact_size_report_tiny_10k() {
         p.len()
     );
 }
+
+#[test]
+fn artifact_header_accessors_match_training_config() {
+    use mako_cfr::artifact::{read_metadata, stored_abstraction, stored_rules};
+    let t = trained(12, 120);
+    let bytes = artifact_of(&t).to_bytes();
+    let cfg = t.config();
+    assert_eq!(stored_abstraction(&bytes).unwrap(), cfg.abstraction);
+    assert_eq!(stored_rules(&bytes).unwrap(), cfg.rules);
+    let m = read_metadata(&bytes).unwrap();
+    assert_eq!(m, StrategyArtifact::from_bytes(&bytes).unwrap().metadata);
+    assert_eq!((m.seed, m.iterations), (12, 120));
+    assert_eq!(m.label, LABEL);
+    assert!(m.trainer_id.starts_with("mako-cfr "));
+    assert_eq!((m.update, m.weighting), (cfg.update, cfg.weighting));
+    let a = StrategyArtifact::from_bytes(&bytes).unwrap();
+    assert_eq!((a.rules(), a.abstraction()), (&cfg.rules, &cfg.abstraction));
+    let p = Policy::load(&bytes, &cfg.rules, &cfg.abstraction).unwrap();
+    assert_eq!((p.rules(), p.abstraction()), (&cfg.rules, &cfg.abstraction));
+}
+
+#[test]
+fn artifact_header_accessors_reject_malformed_headers() {
+    use mako_cfr::artifact::{read_metadata, stored_abstraction, stored_rules};
+    let good = artifact_of(&trained(12, 60)).to_bytes();
+    let mut magic = good.clone();
+    magic[0] = b'Z';
+    assert_eq!(
+        stored_abstraction(&magic).unwrap_err(),
+        ArtifactError::BadMagic
+    );
+    let mut ver = good.clone();
+    ver[8] = 9;
+    assert_eq!(
+        stored_rules(&ver).unwrap_err(),
+        ArtifactError::UnsupportedVersion(9)
+    );
+    let mut flipped = good.clone();
+    flipped[30] ^= 0x10; // inside the rules/abstraction header
+    assert_eq!(
+        read_metadata(&flipped).unwrap_err(),
+        ArtifactError::ChecksumMismatch
+    );
+    assert_eq!(
+        read_metadata(&good[..6]).unwrap_err(),
+        ArtifactError::Truncated
+    );
+    // Header cut short but resealed: structurally truncated.
+    let mut short = good[..40].to_vec();
+    short.extend_from_slice(&[0; 8]);
+    assert_eq!(
+        read_metadata(&reseal(short)).unwrap_err(),
+        ArtifactError::Truncated
+    );
+    // Corrupted abstraction bytes with a valid checksum.
+    let mut abs = good.clone();
+    let off = 11 + "GAME_RULES v1".len() + 12; // start of AbstractionConfig bytes
+    assert_eq!(&abs[off..off + 4], b"MKEQ");
+    abs[off] = b'X';
+    assert!(matches!(
+        stored_abstraction(&reseal(abs)).unwrap_err(),
+        ArtifactError::Invalid(_)
+    ));
+}

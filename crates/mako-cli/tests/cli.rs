@@ -1,4 +1,5 @@
-//! End-to-end tests of the `mako` binary.
+//! End-to-end tests of the `mako` binary against the untrained baseline
+//! (M-05). CFR-policy sessions are tested in `tests/cfr.rs`.
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
@@ -9,9 +10,15 @@ use mako_core::card::Card;
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandConfig, HandState};
 
+/// Runs the binary. Unless the test picks a bot, `--bot baseline` is added
+/// so these tests never depend on a local trained artifact.
 fn mako(args: &[&str], stdin: &str) -> Output {
+    let mut argv: Vec<&str> = args.to_vec();
+    if !args.iter().any(|a| a.starts_with("--bot")) && !args.contains(&"--help") {
+        argv.extend(["--bot", "baseline"]);
+    }
     let mut child = Command::new(env!("CARGO_BIN_EXE_mako"))
-        .args(args)
+        .args(&argv)
         .env_remove("NO_COLOR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -210,14 +217,24 @@ fn eof_ends_gracefully() {
 }
 
 #[test]
-fn cfr_bot_is_refused_explicitly() {
-    let o = mako(&["--bot", "cfr", "--seed", "1", "--auto", "checkcall"], "");
+fn cfr_bot_with_missing_artifact_is_refused_explicitly() {
+    let o = mako(
+        &[
+            "--bot",
+            "cfr",
+            "--strategy",
+            "/nonexistent/mako/none.mako",
+            "--seed",
+            "1",
+            "--auto",
+            "checkcall",
+        ],
+        "",
+    );
     assert_eq!(o.status.code(), Some(2));
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(
-        err.contains("not available yet: no trained policy (M-14)"),
-        "{err}"
-    );
+    assert!(err.contains("no trained policy for 20BB"), "{err}");
+    assert!(err.contains("missing"), "{err}");
     assert!(o.stdout.is_empty(), "no game played with a substitute bot");
 }
 

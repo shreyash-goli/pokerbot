@@ -325,6 +325,91 @@ fn num_buckets(abs: &AbstractionConfig, key: &InfoKey) -> u16 {
         .unwrap_or(NUM_PREFLOP_CLASSES as u16)
 }
 
+/// Checks magic, version and checksum, then parses the header fields up to
+/// (not including) the entry count. Returns the metadata, the checksummed
+/// body and the reader offset of the entry count.
+fn parse_header(bytes: &[u8]) -> Result<(ArtifactMetadata, &[u8], usize), ArtifactError> {
+    if bytes.len() < 10 {
+        return Err(ArtifactError::Truncated);
+    }
+    if &bytes[..8] != ARTIFACT_MAGIC {
+        return Err(ArtifactError::BadMagic);
+    }
+    let version = u16::from_le_bytes([bytes[8], bytes[9]]);
+    if version != ARTIFACT_VERSION {
+        return Err(ArtifactError::UnsupportedVersion(version));
+    }
+    if bytes.len() < 18 {
+        return Err(ArtifactError::Truncated);
+    }
+    let (body, tail) = bytes.split_at(bytes.len() - 8);
+    if fnv1a64(body) != u64::from_le_bytes(tail.try_into().expect("8")) {
+        return Err(ArtifactError::ChecksumMismatch);
+    }
+    let mut r = Reader { b: body, pos: 10 };
+    let spec_len = usize::from(r.u8()?);
+    let spec = r.text(spec_len)?;
+    if spec != RULES_SPEC {
+        return Err(ArtifactError::UnsupportedRulesSpec(spec));
+    }
+    let rules = RulesConfig {
+        small_blind: r.u32()?,
+        big_blind: r.u32()?,
+        starting_stack: r.u32()?,
+    };
+    let abstraction = AbstractionConfig::from_bytes(r.take(CONFIG_BYTES)?)
+        .map_err(|e| ArtifactError::Invalid(e.to_string()))?;
+    if r.u64()? != abstraction.fingerprint() {
+        return Err(ArtifactError::Invalid("abstraction fingerprint".into()));
+    }
+    let (update, weighting) = flags_from_bits(r.u32()?)
+        .ok_or_else(|| ArtifactError::Invalid("unknown flag bits".into()))?;
+    let seed = r.u64()?;
+    let iterations = r.u64()?;
+    let n = usize::from(r.u16()?);
+    let trainer_id = r.text(n)?;
+    let n = usize::from(r.u16()?);
+    let label = r.text(n)?;
+    let metadata = ArtifactMetadata {
+        rules,
+        abstraction,
+        seed,
+        iterations,
+        update,
+        weighting,
+        trainer_id,
+        label,
+    };
+    rules
+        .validate()
+        .map_err(|e| ArtifactError::Invalid(e.to_string()))?;
+    if metadata.trainer_id.len() > MAX_TEXT_BYTES || metadata.label.len() > MAX_TEXT_BYTES {
+        return Err(ArtifactError::Invalid("text field too long".into()));
+    }
+    Ok((metadata, body, r.pos))
+}
+
+/// Header-only read: verifies magic, version, checksum (over the whole
+/// file), rules spec, rules, abstraction (with fingerprint), flags and text
+/// fields, and returns the metadata **without** decoding or validating the
+/// entries. Use [`StrategyArtifact::from_bytes`] or [`Policy::load`] before
+/// using the strategy itself.
+pub fn read_metadata(bytes: &[u8]) -> Result<ArtifactMetadata, ArtifactError> {
+    parse_header(bytes).map(|(m, _, _)| m)
+}
+
+/// The [`AbstractionConfig`] stored in an artifact (header-only read; see
+/// [`read_metadata`]).
+pub fn stored_abstraction(bytes: &[u8]) -> Result<AbstractionConfig, ArtifactError> {
+    read_metadata(bytes).map(|m| m.abstraction)
+}
+
+/// The [`RulesConfig`] (blinds and depth) stored in an artifact (header-only
+/// read; see [`read_metadata`]).
+pub fn stored_rules(bytes: &[u8]) -> Result<RulesConfig, ArtifactError> {
+    read_metadata(bytes).map(|m| m.rules)
+}
+
 impl StrategyArtifact {
     /// Build from a table's average strategy. Information sets that never
     /// accumulated average-strategy mass (visited only as the traverser) are
@@ -352,6 +437,16 @@ impl StrategyArtifact {
         // Validate what we produce with the same rules as the reader.
         a.validate()?;
         Ok(a)
+    }
+
+    /// Rules the artifact was trained for.
+    pub fn rules(&self) -> &RulesConfig {
+        &self.metadata.rules
+    }
+
+    /// Card abstraction the artifact was trained with.
+    pub fn abstraction(&self) -> &AbstractionConfig {
+        &self.metadata.abstraction
     }
 
     /// FNV-1a 64 checksum of the serialized artifact (its last 8 bytes).
@@ -400,47 +495,8 @@ impl StrategyArtifact {
 
     /// Decode and fully validate.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ArtifactError> {
-        if bytes.len() < 10 {
-            return Err(ArtifactError::Truncated);
-        }
-        if &bytes[..8] != ARTIFACT_MAGIC {
-            return Err(ArtifactError::BadMagic);
-        }
-        let version = u16::from_le_bytes([bytes[8], bytes[9]]);
-        if version != ARTIFACT_VERSION {
-            return Err(ArtifactError::UnsupportedVersion(version));
-        }
-        if bytes.len() < 18 {
-            return Err(ArtifactError::Truncated);
-        }
-        let (body, tail) = bytes.split_at(bytes.len() - 8);
-        if fnv1a64(body) != u64::from_le_bytes(tail.try_into().expect("8")) {
-            return Err(ArtifactError::ChecksumMismatch);
-        }
-        let mut r = Reader { b: body, pos: 10 };
-        let spec_len = usize::from(r.u8()?);
-        let spec = r.text(spec_len)?;
-        if spec != RULES_SPEC {
-            return Err(ArtifactError::UnsupportedRulesSpec(spec));
-        }
-        let rules = RulesConfig {
-            small_blind: r.u32()?,
-            big_blind: r.u32()?,
-            starting_stack: r.u32()?,
-        };
-        let abstraction = AbstractionConfig::from_bytes(r.take(CONFIG_BYTES)?)
-            .map_err(|e| ArtifactError::Invalid(e.to_string()))?;
-        if r.u64()? != abstraction.fingerprint() {
-            return Err(ArtifactError::Invalid("abstraction fingerprint".into()));
-        }
-        let (update, weighting) = flags_from_bits(r.u32()?)
-            .ok_or_else(|| ArtifactError::Invalid("unknown flag bits".into()))?;
-        let seed = r.u64()?;
-        let iterations = r.u64()?;
-        let n = usize::from(r.u16()?);
-        let trainer_id = r.text(n)?;
-        let n = usize::from(r.u16()?);
-        let label = r.text(n)?;
+        let (metadata, body, pos) = parse_header(bytes)?;
+        let mut r = Reader { b: body, pos };
         let count = r.u32()? as usize;
         let mut entries = Vec::with_capacity(count.min(1 << 20));
         for _ in 0..count {
@@ -463,19 +519,7 @@ impl StrategyArtifact {
         if r.pos != body.len() {
             return Err(ArtifactError::TrailingBytes);
         }
-        let a = Self {
-            metadata: ArtifactMetadata {
-                rules,
-                abstraction,
-                seed,
-                iterations,
-                update,
-                weighting,
-                trainer_id,
-                label,
-            },
-            entries,
-        };
+        let a = Self { metadata, entries };
         a.validate()?;
         Ok(a)
     }
@@ -589,6 +633,16 @@ impl Policy {
     /// Metadata.
     pub fn metadata(&self) -> &ArtifactMetadata {
         &self.artifact.metadata
+    }
+
+    /// Rules the policy was trained for.
+    pub fn rules(&self) -> &RulesConfig {
+        &self.artifact.metadata.rules
+    }
+
+    /// Card abstraction the policy was trained with.
+    pub fn abstraction(&self) -> &AbstractionConfig {
+        &self.artifact.metadata.abstraction
     }
 
     /// Number of stored information sets.

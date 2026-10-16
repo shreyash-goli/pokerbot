@@ -13,6 +13,11 @@ pub const MAX_HANDS: u64 = 100_000;
 /// Which bot plays the opponent seat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotKind {
+    /// CFR policy if a valid artifact for the depth loads; otherwise the
+    /// untrained baseline, announced with a loud banner.
+    Auto,
+    /// CFR policy; a missing or invalid artifact is a hard error.
+    Cfr,
     /// Seeded weighted-random legal bot (untrained).
     Baseline,
 }
@@ -37,7 +42,7 @@ impl AutoPolicy {
 }
 
 /// A fully parsed session configuration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
     /// `None` means "derive from the clock" (done in `main`).
     pub seed: Option<u64>,
@@ -46,6 +51,8 @@ pub struct Options {
     pub bot: BotKind,
     pub no_color: bool,
     pub auto: Option<AutoPolicy>,
+    /// `--strategy`; `None` means `artifacts/smoke_<depth>bb.mako`.
+    pub strategy: Option<String>,
 }
 
 impl Default for Options {
@@ -54,15 +61,16 @@ impl Default for Options {
             seed: None,
             hands: DEFAULT_HANDS,
             depth: StackDepth::Bb20,
-            bot: BotKind::Baseline,
+            bot: BotKind::Auto,
             no_color: false,
             auto: None,
+            strategy: None,
         }
     }
 }
 
 /// What the command line asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
     Version,
@@ -74,12 +82,7 @@ pub enum Command {
 pub enum ArgError {
     UnknownFlag(String),
     MissingValue(&'static str),
-    InvalidValue {
-        flag: &'static str,
-        value: String,
-    },
-    /// `--bot cfr` before a trained policy exists (M-14).
-    BotUnavailable(String),
+    InvalidValue { flag: &'static str, value: String },
     UnknownBot(String),
     UnknownAuto(String),
 }
@@ -98,13 +101,8 @@ impl fmt::Display for ArgError {
                 };
                 write!(f, "invalid value '{value}' for {flag}{hint}")
             }
-            ArgError::BotUnavailable(name) => write!(
-                f,
-                "bot '{name}' is not available yet: no trained policy (M-14). \
-                 Use --bot baseline (untrained, random legal)."
-            ),
             ArgError::UnknownBot(name) => {
-                write!(f, "unknown bot '{name}' (available: baseline)")
+                write!(f, "unknown bot '{name}' (available: auto, cfr, baseline)")
             }
             ArgError::UnknownAuto(name) => {
                 write!(
@@ -129,8 +127,12 @@ OPTIONS:
     --seed <u64>          Session seed (default: from the clock; always printed)
     --hands <n>           Number of hands to play (default 10, max 100000)
     --depth <20|50|100>   Starting stack in big blinds at 1/2 blinds (default 20)
-    --bot <name>          Opponent: baseline (untrained, random legal).
-                          'cfr' is not available until a trained policy exists.
+    --bot <auto|cfr|baseline>
+                          Opponent (default auto). cfr: trained policy from
+                          --strategy, error if missing/invalid. baseline:
+                          untrained, random legal. auto: cfr if the artifact
+                          loads for this depth, else baseline with a warning.
+    --strategy <path>     Policy artifact (default artifacts/smoke_<depth>bb.mako)
     --auto <policy>       Play the human seat with a scripted policy
                           (checkcall | random); reads no input
     --no-color            Disable ANSI colors (NO_COLOR is also honoured)
@@ -198,12 +200,18 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
             "--bot" => {
                 let v = take_value("--bot", inline, &mut it)?;
                 opts.bot = match v.to_ascii_lowercase().as_str() {
+                    "auto" => BotKind::Auto,
+                    "cfr" => BotKind::Cfr,
                     "baseline" => BotKind::Baseline,
-                    "cfr" | "mccfr" | "trained" => {
-                        return Err(ArgError::BotUnavailable(v.to_string()));
-                    }
                     _ => return Err(ArgError::UnknownBot(v.to_string())),
                 };
+            }
+            "--strategy" => {
+                let v = take_value("--strategy", inline, &mut it)?;
+                if v.is_empty() {
+                    return Err(invalid("--strategy", v));
+                }
+                opts.strategy = Some(v.to_string());
             }
             "--auto" => {
                 let v = take_value("--auto", inline, &mut it)?;
@@ -237,6 +245,8 @@ mod tests {
         assert_eq!(o.depth, StackDepth::Bb20);
         assert_eq!(o.hands, DEFAULT_HANDS);
         assert_eq!(o.seed, None);
+        assert_eq!(o.bot, BotKind::Auto);
+        assert_eq!(o.strategy, None);
     }
 
     #[test]
@@ -272,12 +282,21 @@ mod tests {
     }
 
     #[test]
-    fn cfr_bot_is_an_explicit_error() {
-        let e = parse(&["--bot", "cfr"]).unwrap_err();
-        assert_eq!(e, ArgError::BotUnavailable("cfr".into()));
-        let msg = e.to_string();
-        assert!(msg.contains("not available yet"), "{msg}");
-        assert!(msg.contains("no trained policy (M-14)"), "{msg}");
+    fn bot_kinds_and_strategy() {
+        assert_eq!(play(&["--bot", "cfr"]).bot, BotKind::Cfr);
+        assert_eq!(play(&["--bot", "AUTO"]).bot, BotKind::Auto);
+        assert_eq!(play(&["--bot=baseline"]).bot, BotKind::Baseline);
+        let o = play(&["--strategy", "x/y.mako"]);
+        assert_eq!(o.strategy.as_deref(), Some("x/y.mako"));
+        assert_eq!(
+            play(&["--strategy=z.mako"]).strategy.as_deref(),
+            Some("z.mako")
+        );
+        assert_eq!(
+            parse(&["--strategy"]),
+            Err(ArgError::MissingValue("--strategy"))
+        );
+        assert!(parse(&["--strategy="]).is_err());
     }
 
     #[test]

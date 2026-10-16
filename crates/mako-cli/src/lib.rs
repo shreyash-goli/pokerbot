@@ -1,7 +1,8 @@
 //! `mako-cli` — the native terminal game (M-05: minimal playable loop).
 //!
 //! * [`args`] — hand-rolled command-line parsing
-//! * [`baseline`] — the [`baseline::Bot`] trait and the untrained baseline bot
+//! * [`opponent`] — selects the opponent agent (CFR policy or untrained
+//!   baseline, both `mako_cfr::infer::Agent`s) and builds its banner
 //! * [`input`] — parsing of player commands against the engine's legal actions
 //! * [`render`] — plain/ANSI text rendering from a `PlayerObservation`
 //! * [`game`] — the session loop (human vs bot) and seed derivation
@@ -11,12 +12,10 @@
 //! this crate only ever submits actions taken from the engine's legal list.
 
 pub mod args;
-pub mod baseline;
 pub mod game;
 pub mod input;
+pub mod opponent;
 pub mod render;
 
-// Later milestones plug in the CFR policy (M-14) and analysis (M-17/M-18);
-// reference those workspace crates so the dependency graph stays exercised.
-const _: &str = mako_cfr::VERSION;
+// Analysis (M-17/M-18) plugs in later; keep the dependency graph exercised.
 const _: &str = mako_analysis::VERSION;
