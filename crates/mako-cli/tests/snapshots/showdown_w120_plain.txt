@@ -1,0 +1,12 @@
++= Mako ======================================================================================== Hand 2/5 | Hand over =+
+|   Bot  BB     [Qh][Kh]  stack   28  bet    0             | Action log                                                |
+|                                                          | Preflop You call 1, Bot checks                            |
+|         Board [Js][7s][2c][Ts][7d]   Pot 0               | Flop    Bot bets 2 (half pot), You call 2                 |
+|                                                          | Turn    Bot checks, You check                             |
+|   You  BTN/SB [9c][8h]  stack   52  bet    0             | River   Bot bets 8 (pot), You call 8                      |
++= vs cfr 20BB (500k it): smoke: trained for plumbing, not competition ================================================+
+*** SHOWDOWN ***
+  Board [Js][7s][2c][Ts][7d]
+  You   [9c][8h]  Straight
+  Bot   [Qh][Kh]  Pair
+  You win. You +12 / Bot -12

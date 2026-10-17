@@ -1,5 +1,6 @@
 //! Parsing of a typed line into a command. Pure: it only reads the legal
-//! action list, so it cannot change game state.
+//! action list, so it cannot change game state. Every accepted word is
+//! listed by the help text (`ui::help`).
 
 use mako_core::action::{ActionKind, LegalAction};
 
@@ -33,9 +34,9 @@ fn kind_for_word(word: &str) -> Option<&'static [ActionKind]> {
         "c" => &[Check, Call],
         "k" | "check" => &[Check],
         "call" => &[Call],
-        "h" | "half" | "halfpot" | "half-pot" => &[HalfPot],
+        "h" | "half" => &[HalfPot],
         "p" | "pot" => &[Pot],
-        "a" | "allin" | "all-in" | "shove" => &[AllIn],
+        "a" | "allin" | "all-in" => &[AllIn],
         _ => return None,
     })
 }
@@ -46,8 +47,8 @@ pub fn parse_in_hand(line: &str, legal: &[LegalAction]) -> InHand {
     match word.as_str() {
         "" => return InHand::Invalid("type an action key (or 'help')"),
         "?" | "help" => return InHand::Help,
-        "s" | "stats" | "score" => return InHand::Stats,
-        "q" | "quit" | "exit" => return InHand::Quit,
+        "s" | "stats" => return InHand::Stats,
+        "q" | "quit" => return InHand::Quit,
         _ => {}
     }
     if let Ok(n) = word.parse::<usize>() {
@@ -80,10 +81,10 @@ pub enum BetweenHands {
 /// Parses one line typed between hands.
 pub fn parse_between(line: &str) -> BetweenHands {
     match line.trim().to_ascii_lowercase().as_str() {
-        "" | "c" | "n" | "y" | "next" | "continue" | "deal" => BetweenHands::Continue,
-        "s" | "stats" | "score" => BetweenHands::Stats,
+        "" | "c" | "continue" => BetweenHands::Continue,
+        "s" | "stats" => BetweenHands::Stats,
         "?" | "help" => BetweenHands::Help,
-        "q" | "quit" | "exit" => BetweenHands::Quit,
+        "q" | "quit" => BetweenHands::Quit,
         _ => BetweenHands::Invalid,
     }
 }

@@ -1,15 +1,17 @@
 //! `mako` — heads-up no-limit hold'em in the terminal.
 
 use std::io::{self, IsTerminal};
-use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use std::path::Path;
+use std::process::ExitCode;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use mako_cli::args::{self, Command};
 use mako_cli::game::{self, AutoPlayer, HumanSeat, SessionConfig};
 use mako_cli::opponent;
-use mako_cli::render::Style;
+use mako_cli::ui::{Ui, term};
+
+/// Pause before bot actions and new streets in interactive TTY play.
+const PACE: Duration = Duration::from_millis(350);
 
 fn clock_seed() -> u64 {
     let d = SystemTime::now()
@@ -35,27 +37,38 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let no_color_env = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
-    let style = Style {
-        color: !opts.no_color && !no_color_env && io::stdout().is_terminal(),
+    let env = |k: &str| std::env::var(k).ok();
+    let stdout_tty = io::stdout().is_terminal();
+    let ui = Ui {
+        color: term::detect_color(opts.color, &env, stdout_tty),
+        glyphs: term::detect_glyphs(opts.glyphs, &env),
+        width: term::detect_width(opts.width, &env),
     };
-    let cfg = SessionConfig {
-        seed: opts.seed.unwrap_or_else(clock_seed),
-        hands: opts.hands,
-        depth: opts.depth,
-        style,
-    };
+    let seed = opts.seed.unwrap_or_else(clock_seed);
     let mut opp = match opponent::select(
         opts.bot,
         opts.strategy.as_deref().map(Path::new),
-        cfg.depth,
-        game::bot_seed(cfg.seed),
+        opts.depth,
+        game::bot_seed(seed),
     ) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("mako: error: {e}");
             return ExitCode::from(2);
         }
+    };
+    let interactive = opts.auto.is_none() && stdout_tty && io::stdin().is_terminal();
+    let cfg = SessionConfig {
+        seed,
+        hands: opts.hands,
+        depth: opts.depth,
+        ui,
+        replay: opts.replay_command(seed, &opp.strategy_path.display().to_string()),
+        pace: if interactive && !opts.fast {
+            PACE
+        } else {
+            Duration::ZERO
+        },
     };
     let human = match opts.auto {
         Some(p) => HumanSeat::Auto(AutoPlayer::new(p, cfg.seed)),

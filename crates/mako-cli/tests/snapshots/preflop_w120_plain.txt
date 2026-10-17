@@ -1,0 +1,8 @@
++= Mako ========================================================================================== Hand 2/5 | Preflop =+
+|   Bot  BB     [##][##]  stack   38  bet    2             | Action log                                                |
+|                                                          | (no actions yet)                                          |
+|         Board [--][--][--][--][--]   Pot 3               |                                                           |
+|                                                          |                                                           |
+| > You  BTN/SB [9c][8h]  stack   39  bet    1             |                                                           |
++= vs cfr 20BB (500k it): smoke: trained for plumbing, not competition ================================================+
+  Options: [f] fold   [c] call 1   [h] raise to 4 (half pot)   [p] raise to 6 (pot)   [a] all-in to 40

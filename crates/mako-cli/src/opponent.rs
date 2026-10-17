@@ -15,6 +15,7 @@ use mako_cfr::infer::{Agent, AgentError, BaselineAgent, CfrAgent, short_count};
 use mako_core::rules::{RulesConfig, StackDepth};
 
 use crate::args::BotKind;
+use crate::ui::screens::{Banner, BannerLevel};
 
 pub use mako_cfr::infer::BASELINE_LABEL;
 
@@ -77,8 +78,10 @@ pub enum OpponentKind {
 pub struct Opponent {
     pub agent: Box<dyn Agent>,
     pub kind: OpponentKind,
-    /// Lines printed at the start of the session.
-    pub banner: Vec<String>,
+    /// Announcement printed at the start of the session.
+    pub banner: Banner,
+    /// The artifact path that was tried (for the replay hint).
+    pub strategy_path: PathBuf,
 }
 
 /// Selection failed (only for `--bot cfr`); the message names the reason.
@@ -91,52 +94,58 @@ impl fmt::Display for SelectError {
     }
 }
 
-fn cfr_banner(agent: &CfrAgent, path: &Path) -> Vec<String> {
+fn cfr_banner(agent: &CfrAgent, path: &Path) -> Banner {
     let m = agent.metadata();
-    vec![
-        format!("Opponent: CFR policy -- {}", agent.label()),
-        format!(
-            "  artifact {} | checksum {:#018x} | {} infosets | abstraction {:#018x}",
-            path.display(),
-            m.checksum,
-            m.infosets,
-            m.fingerprint
-        ),
-        format!(
-            "  trained {} iterations ({}) | trainer seed {} | {} | {}BB, blinds {}/{}",
-            m.iterations,
-            short_count(m.iterations),
-            m.seed,
-            m.trainer_id,
-            m.depth_bb(),
-            m.rules.small_blind,
-            m.rules.big_blind
-        ),
-        "  NOTE: plumbing-only smoke policy -- not competitive, not GTO / Nash. Unseen".to_string(),
-        "  situations use an explicit uniform-random legal fallback ('stats' counts them)."
-            .to_string(),
-    ]
+    Banner {
+        level: BannerLevel::Info,
+        lines: vec![
+            format!("Opponent: CFR policy -- {}", agent.label()),
+            format!(
+                "artifact {} | checksum {:#018x} | {} infosets | abstraction {:#018x}",
+                path.display(),
+                m.checksum,
+                m.infosets,
+                m.fingerprint
+            ),
+            format!(
+                "trained {} iterations ({}) | trainer seed {} | {} | {}BB, blinds {}/{}",
+                m.iterations,
+                short_count(m.iterations),
+                m.seed,
+                m.trainer_id,
+                m.depth_bb(),
+                m.rules.small_blind,
+                m.rules.big_blind
+            ),
+            "NOTE: plumbing-only smoke policy -- not competitive, not GTO / Nash. Unseen \
+             situations use an explicit uniform-random legal fallback ('stats' counts them)."
+                .to_string(),
+        ],
+    }
 }
 
-fn baseline_banner() -> Vec<String> {
-    vec![format!(
-        "Opponent: {BASELINE_LABEL}. This bot is NOT a trained CFR policy."
-    )]
+fn baseline_banner() -> Banner {
+    Banner {
+        level: BannerLevel::Info,
+        lines: vec![format!(
+            "Opponent: {BASELINE_LABEL}. This bot is NOT a trained CFR policy."
+        )],
+    }
 }
 
-fn loud_fallback_banner(depth: StackDepth, path: &Path, why: &LoadFailure) -> Vec<String> {
-    let bar = "!".repeat(76);
-    vec![
-        bar.clone(),
-        format!(
-            "!! No trained policy for {}BB at {} ({why}).",
-            depth.big_blinds(),
-            path.display()
-        ),
-        format!("!! Playing the UNTRAINED baseline: {BASELINE_LABEL}."),
-        format!("!! {TRAIN_HINT}, or pass --strategy <path>."),
-        bar,
-    ]
+fn loud_fallback_banner(depth: StackDepth, path: &Path, why: &LoadFailure) -> Banner {
+    Banner {
+        level: BannerLevel::Warning,
+        lines: vec![
+            format!(
+                "No trained policy for {}BB at {} ({why}).",
+                depth.big_blinds(),
+                path.display()
+            ),
+            format!("Playing the UNTRAINED baseline: {BASELINE_LABEL}."),
+            format!("{TRAIN_HINT}, or pass --strategy <path>."),
+        ],
+    }
 }
 
 /// Picks the opponent. `seed` seeds the agent's own RNG (derive it from the
@@ -155,12 +164,14 @@ pub fn select(
             agent: Box::new(BaselineAgent::new(seed)),
             kind: OpponentKind::Baseline,
             banner: baseline_banner(),
+            strategy_path: path.to_path_buf(),
         }),
         BotKind::Cfr => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
+                strategy_path: path.to_path_buf(),
             }),
             Err(why) => Err(SelectError(format!(
                 "--bot cfr: no trained policy for {}BB at {} ({why}). \
@@ -174,11 +185,13 @@ pub fn select(
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
+                strategy_path: path.to_path_buf(),
             }),
             Err(why) => Ok(Opponent {
                 agent: Box::new(BaselineAgent::new(seed)),
                 kind: OpponentKind::BaselineFallback,
                 banner: loud_fallback_banner(depth, path, &why),
+                strategy_path: path.to_path_buf(),
             }),
         },
     }
@@ -212,7 +225,8 @@ mod tests {
         let o = select(BotKind::Auto, Some(p), StackDepth::Bb50, 1).unwrap();
         assert_eq!(o.kind, OpponentKind::BaselineFallback);
         assert_eq!(o.agent.label(), BASELINE_LABEL);
-        let b = o.banner.join("\n");
+        assert_eq!(o.banner.level, BannerLevel::Warning);
+        let b = o.banner.lines.join("\n");
         assert!(b.contains("No trained policy for 50BB"), "{b}");
         assert!(b.contains("UNTRAINED baseline"), "{b}");
         assert!(b.contains("scripts/train_smoke.sh"), "{b}");
@@ -222,6 +236,6 @@ mod tests {
     fn baseline_explicit() {
         let o = select(BotKind::Baseline, None, StackDepth::Bb20, 1).unwrap();
         assert_eq!(o.kind, OpponentKind::Baseline);
-        assert!(o.banner[0].contains("NOT a trained CFR policy"));
+        assert!(o.banner.lines[0].contains("NOT a trained CFR policy"));
     }
 }

@@ -1,0 +1,10 @@
++= Mako ===================================================== Hand 2/5 | Flop =+
+|   Bot  BB     [##][##]  stack   36  bet    2                                 |
+|                                                                              |
+|         Board [Js][7s][2c][--][--]   Pot 6                                   |
+|                                                                              |
+| > You  BTN/SB [9c][8h]  stack   38  bet    0                                 |
++= vs cfr 20BB (500k it): smoke: trained for plumbing, not competition ========+
+  Log: Preflop: You call 1, Bot checks | Flop: Bot bets 2 (half pot)
+  Options: [f] fold   [c] call 2   [h] raise to 6 (half pot)
+           [p] raise to 10 (pot)   [a] all-in to 38

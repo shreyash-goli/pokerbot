@@ -5,7 +5,7 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 use mako_cli::game::{BOT, HUMAN, hand_deck};
-use mako_cli::render::SHOWDOWN_MARKER;
+use mako_cli::ui::SHOWDOWN_MARKER;
 use mako_core::card::Card;
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandConfig, HandState};
@@ -19,7 +19,12 @@ fn mako(args: &[&str], stdin: &str) -> Output {
     }
     let mut child = Command::new(env!("CARGO_BIN_EXE_mako"))
         .args(&argv)
+        // A fixed environment: 80 columns, ASCII glyphs, no colour hints.
         .env_remove("NO_COLOR")
+        .env_remove("COLUMNS")
+        .env_remove("COLORTERM")
+        .env("LC_ALL", "C")
+        .env("TERM", "xterm")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -41,7 +46,7 @@ fn stdout(o: &Output) -> String {
 
 /// The output section of each hand, split on the hand header.
 fn hand_sections(out: &str) -> Vec<&str> {
-    out.split("======== Hand ").skip(1).collect()
+    out.split("\n-- Hand ").skip(1).collect()
 }
 
 /// Hole cards of (human, bot) for hand `i` of a session, recomputed with

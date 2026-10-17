@@ -4,6 +4,8 @@ use std::fmt;
 
 use mako_core::rules::StackDepth;
 
+use crate::ui::term::{ColorChoice, ColorMode, GlyphChoice, Glyphs, MAX_WIDTH, MIN_WIDTH};
+
 /// Default number of hands per session.
 pub const DEFAULT_HANDS: u64 = 10;
 /// Upper bound on `--hands`, so a typo cannot start an effectively endless
@@ -49,10 +51,51 @@ pub struct Options {
     pub hands: u64,
     pub depth: StackDepth,
     pub bot: BotKind,
-    pub no_color: bool,
+    /// `--color` / `--no-color`.
+    pub color: ColorChoice,
+    /// `--glyphs`.
+    pub glyphs: GlyphChoice,
+    /// `--width`; `None` means `COLUMNS` or 80.
+    pub width: Option<usize>,
+    /// `--fast`: no pauses between bot actions.
+    pub fast: bool,
     pub auto: Option<AutoPolicy>,
     /// `--strategy`; `None` means `artifacts/smoke_<depth>bb.mako`.
     pub strategy: Option<String>,
+}
+
+impl Options {
+    /// The bot names as accepted by `--bot`.
+    pub const fn bot_name(&self) -> &'static str {
+        match self.bot {
+            BotKind::Auto => "auto",
+            BotKind::Cfr => "cfr",
+            BotKind::Baseline => "baseline",
+        }
+    }
+
+    /// A command line that replays this session with `seed` (same deck,
+    /// bot and scripted-player streams). `strategy` is the artifact path
+    /// actually used (omitted for the baseline).
+    pub fn replay_command(&self, seed: u64, strategy: &str) -> String {
+        let mut c = format!(
+            "mako --seed {seed} --hands {} --depth {} --bot {}",
+            self.hands,
+            self.depth.big_blinds(),
+            self.bot_name()
+        );
+        if self.bot != BotKind::Baseline {
+            if strategy.contains(char::is_whitespace) {
+                c.push_str(&format!(" --strategy '{strategy}'"));
+            } else {
+                c.push_str(&format!(" --strategy {strategy}"));
+            }
+        }
+        if let Some(a) = self.auto {
+            c.push_str(&format!(" --auto {}", a.name()));
+        }
+        c
+    }
 }
 
 impl Default for Options {
@@ -62,7 +105,10 @@ impl Default for Options {
             hands: DEFAULT_HANDS,
             depth: StackDepth::Bb20,
             bot: BotKind::Auto,
-            no_color: false,
+            color: ColorChoice::Auto,
+            glyphs: GlyphChoice::Auto,
+            width: None,
+            fast: false,
             auto: None,
             strategy: None,
         }
@@ -82,9 +128,14 @@ pub enum Command {
 pub enum ArgError {
     UnknownFlag(String),
     MissingValue(&'static str),
-    InvalidValue { flag: &'static str, value: String },
+    InvalidValue {
+        flag: &'static str,
+        value: String,
+    },
     UnknownBot(String),
     UnknownAuto(String),
+    /// The same option given twice (or `--color` with `--no-color`).
+    Repeated(&'static str),
 }
 
 impl fmt::Display for ArgError {
@@ -96,6 +147,9 @@ impl fmt::Display for ArgError {
                 let hint = match *flag {
                     "--depth" => " (expected 20, 50 or 100)",
                     "--hands" => " (expected 1..=100000)",
+                    "--width" => " (expected 48..=240)",
+                    "--color" => " (expected auto, never, 16, 256 or truecolor)",
+                    "--glyphs" => " (expected auto, unicode or ascii)",
                     "--seed" => " (expected an unsigned 64-bit integer)",
                     _ => "",
                 };
@@ -104,6 +158,11 @@ impl fmt::Display for ArgError {
             ArgError::UnknownBot(name) => {
                 write!(f, "unknown bot '{name}' (available: auto, cfr, baseline)")
             }
+            ArgError::Repeated(flag) => write!(
+                f,
+                "{flag} given more than once (each option may appear once; \
+                 --no-color counts as --color)"
+            ),
             ArgError::UnknownAuto(name) => {
                 write!(
                     f,
@@ -135,13 +194,28 @@ OPTIONS:
     --strategy <path>     Policy artifact (default artifacts/smoke_<depth>bb.mako)
     --auto <policy>       Play the human seat with a scripted policy
                           (checkcall | random); reads no input
-    --no-color            Disable ANSI colors (NO_COLOR is also honoured)
+    --color <auto|never|16|256|truecolor>
+                          Colour depth (default auto: NO_COLOR, non-TTY or
+                          TERM=dumb -> never; COLORTERM=truecolor -> truecolor;
+                          TERM=*256color -> 256; else 16)
+    --no-color            Same as --color never
+    --glyphs <auto|unicode|ascii>
+                          Suit symbols and box frames, or ASCII (default auto:
+                          unicode if LC_ALL/LC_CTYPE/LANG says UTF-8)
+    --width <48..240>     Layout width (default: COLUMNS, else 80; >= 100 uses
+                          the wide two-pane table)
+    --fast                No pauses between bot actions (pauses only ever
+                          happen in interactive TTY play)
     -h, --help            Show this help
     -V, --version         Show the version
 
+Each option may be given at most once.
+
 IN-HAND COMMANDS:
-    action keys shown in the menu (f c k h p a) or menu numbers,
-    help, stats, quit
+    action keys shown in the menu (f c k h p a), menu numbers, or the
+    words fold/check/call/half/pot/allin; help (?), stats (s), quit (q)
+BETWEEN HANDS:
+    Enter / continue (c), stats (s), help (?), quit (q)
 ";
 
 fn take_value<'a, I: Iterator<Item = &'a str>>(
@@ -166,6 +240,15 @@ fn invalid(flag: &'static str, value: &str) -> ArgError {
 /// and `--flag=value`.
 pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
     let mut opts = Options::default();
+    let mut seen: Vec<&'static str> = Vec::new();
+    let mut once = |flag: &'static str| {
+        if seen.contains(&flag) {
+            Err(ArgError::Repeated(flag))
+        } else {
+            seen.push(flag);
+            Ok(())
+        }
+    };
     let mut it = args.iter().map(AsRef::as_ref);
     while let Some(arg) = it.next() {
         let (name, inline) = match arg.split_once('=') {
@@ -173,9 +256,54 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
             _ => (arg, None),
         };
         match name {
+            "--seed" | "--hands" | "--depth" | "--bot" | "--strategy" | "--auto" | "--width"
+            | "--glyphs" | "--fast" => once(match name {
+                "--seed" => "--seed",
+                "--hands" => "--hands",
+                "--depth" => "--depth",
+                "--bot" => "--bot",
+                "--strategy" => "--strategy",
+                "--auto" => "--auto",
+                "--width" => "--width",
+                "--glyphs" => "--glyphs",
+                _ => "--fast",
+            })?,
+            "--color" | "--colour" | "--no-color" | "--no-colour" => once("--color")?,
+            _ => {}
+        }
+        match name {
             "-h" | "--help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
-            "--no-color" | "--no-colour" => opts.no_color = true,
+            "--no-color" | "--no-colour" => opts.color = ColorChoice::Force(ColorMode::None),
+            "--color" | "--colour" => {
+                let v = take_value("--color", inline, &mut it)?;
+                opts.color = match v.to_ascii_lowercase().as_str() {
+                    "auto" => ColorChoice::Auto,
+                    "never" | "none" => ColorChoice::Force(ColorMode::None),
+                    "16" => ColorChoice::Force(ColorMode::Ansi16),
+                    "256" => ColorChoice::Force(ColorMode::Ansi256),
+                    "truecolor" | "24bit" => ColorChoice::Force(ColorMode::TrueColor),
+                    _ => return Err(invalid("--color", v)),
+                };
+            }
+            "--glyphs" => {
+                let v = take_value("--glyphs", inline, &mut it)?;
+                opts.glyphs = match v.to_ascii_lowercase().as_str() {
+                    "auto" => GlyphChoice::Auto,
+                    "unicode" => GlyphChoice::Force(Glyphs::Unicode),
+                    "ascii" => GlyphChoice::Force(Glyphs::Ascii),
+                    _ => return Err(invalid("--glyphs", v)),
+                };
+            }
+            "--width" => {
+                let v = take_value("--width", inline, &mut it)?;
+                let w: usize = v.parse().map_err(|_| invalid("--width", v))?;
+                if !(MIN_WIDTH..=MAX_WIDTH).contains(&w) {
+                    return Err(invalid("--width", v));
+                }
+                opts.width = Some(w);
+            }
+            "--fast" => opts.fast = true,
             "--seed" => {
                 let v = take_value("--seed", inline, &mut it)?;
                 opts.seed = Some(v.parse().map_err(|_| invalid("--seed", v))?);
@@ -268,7 +396,7 @@ mod tests {
         assert_eq!(o.hands, 3);
         assert_eq!(o.depth, StackDepth::Bb100);
         assert_eq!(o.bot, BotKind::Baseline);
-        assert!(o.no_color);
+        assert_eq!(o.color, ColorChoice::Force(ColorMode::None));
         assert_eq!(o.auto, Some(AutoPolicy::CheckCall));
     }
 
@@ -336,6 +464,91 @@ mod tests {
             parse(&["--auto", "bluff"]),
             Err(ArgError::UnknownAuto(_))
         ));
+    }
+
+    #[test]
+    fn ui_flags() {
+        let o = play(&[
+            "--color", "256", "--glyphs", "unicode", "--width", "120", "--fast",
+        ]);
+        assert_eq!(o.color, ColorChoice::Force(ColorMode::Ansi256));
+        assert_eq!(o.glyphs, GlyphChoice::Force(Glyphs::Unicode));
+        assert_eq!(o.width, Some(120));
+        assert!(o.fast);
+        assert_eq!(
+            play(&["--color=truecolor"]).color,
+            ColorChoice::Force(ColorMode::TrueColor)
+        );
+        assert_eq!(
+            play(&["--color", "never"]).color,
+            ColorChoice::Force(ColorMode::None)
+        );
+        assert!(matches!(
+            parse(&["--width", "47"]),
+            Err(ArgError::InvalidValue { .. })
+        ));
+        assert!(matches!(
+            parse(&["--width", "241"]),
+            Err(ArgError::InvalidValue { .. })
+        ));
+        assert!(matches!(
+            parse(&["--color", "pink"]),
+            Err(ArgError::InvalidValue { .. })
+        ));
+        assert!(matches!(
+            parse(&["--glyphs", "emoji"]),
+            Err(ArgError::InvalidValue { .. })
+        ));
+    }
+
+    #[test]
+    fn repeated_flags_are_rejected() {
+        assert_eq!(
+            parse(&["--seed", "1", "--seed", "2"]),
+            Err(ArgError::Repeated("--seed"))
+        );
+        assert_eq!(
+            parse(&["--hands=3", "--hands", "4"]),
+            Err(ArgError::Repeated("--hands"))
+        );
+        assert_eq!(
+            parse(&["--no-color", "--color", "256"]),
+            Err(ArgError::Repeated("--color"))
+        );
+        assert_eq!(
+            parse(&["--fast", "--fast"]),
+            Err(ArgError::Repeated("--fast"))
+        );
+        let msg = ArgError::Repeated("--bot").to_string();
+        assert!(msg.contains("more than once"), "{msg}");
+    }
+
+    #[test]
+    fn replay_command_includes_bot_strategy_auto() {
+        let o = play(&[
+            "--hands",
+            "3",
+            "--bot",
+            "cfr",
+            "--auto",
+            "checkcall",
+            "--depth",
+            "50",
+        ]);
+        assert_eq!(
+            o.replay_command(7, "artifacts/smoke_50bb.mako"),
+            "mako --seed 7 --hands 3 --depth 50 --bot cfr --strategy artifacts/smoke_50bb.mako --auto checkcall"
+        );
+        let b = play(&["--bot", "baseline"]);
+        assert_eq!(
+            b.replay_command(1, "ignored"),
+            "mako --seed 1 --hands 10 --depth 20 --bot baseline"
+        );
+        assert!(
+            play(&[])
+                .replay_command(1, "a b.mako")
+                .ends_with("--strategy 'a b.mako'")
+        );
     }
 
     #[test]

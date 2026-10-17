@@ -19,7 +19,9 @@ use mako_core::state::{HandState, Match};
 use crate::args::AutoPolicy;
 use crate::input::{self, BetweenHands, InHand};
 use crate::opponent::{Opponent, OpponentKind};
-use crate::render::{self, Names, Style};
+use crate::ui::stats::{self, BotSources, SessionStats};
+use crate::ui::table::{self, TableInfo};
+use crate::ui::{Names, Role, Ui, chips_delta, help, screens, term};
 use mako_cfr::infer::InferStats;
 
 /// The human always sits in seat Zero (and has the button on hand 1).
@@ -55,12 +57,17 @@ pub fn bot_seed(session: u64) -> u64 {
 }
 
 /// Session parameters.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionConfig {
     pub seed: u64,
     pub hands: u64,
     pub depth: StackDepth,
-    pub style: Style,
+    pub ui: Ui,
+    /// Command line that replays the session (shown in the header).
+    pub replay: String,
+    /// Pause before each bot action and street (zero = none). Only set for
+    /// interactive TTY play without `--fast`.
+    pub pace: std::time::Duration,
 }
 
 /// Who plays the human seat.
@@ -137,42 +144,31 @@ pub enum HumanChoice {
     InputClosed,
 }
 
-fn help_text() -> String {
-    "  Commands: type the key shown before an action (f fold, c check/call, k check,\n\
-     \x20 h half-pot bet/raise, p pot bet/raise, a all-in) or its menu number.\n\
-     \x20 'stats' shows the session score, 'help' this text, 'quit' ends the session\n\
-     \x20 (an unfinished hand is abandoned and not scored).\n"
-        .to_string()
+fn session_stats(m: &Match, opponent: &Opponent, bot: Option<InferStats>, bb: u32) -> SessionStats {
+    let s = m.score();
+    let decisions = bot.map_or(0, |b| b.decisions);
+    SessionStats {
+        hands_completed: m.hands_played(),
+        you: s[HUMAN.index()],
+        bot: s[BOT.index()],
+        big_blind: bb,
+        opponent: opponent.agent.label(),
+        sources: match (opponent.kind, bot) {
+            (OpponentKind::Cfr, Some(b)) => BotSources::Policy {
+                decisions: b.decisions,
+                policy: b.policy_hits,
+                fallback: b.fallbacks,
+            },
+            _ => BotSources::Untrained { decisions },
+        },
+    }
 }
 
-/// Session score plus the opponent's decision sources. `bot` is a snapshot
-/// taken at the end of the last completed hand, so it never reflects
-/// decisions of the hand in progress (whether the bot's current spot was in
-/// the policy depends on its private cards).
-fn stats_text(m: &Match, names: Names, opponent: &Opponent, bot: Option<InferStats>) -> String {
-    let s = m.score();
-    let mut t = format!(
-        "  Session: {} hand(s) completed. {} {} / {} {}\n",
-        m.hands_played(),
-        names.of(HUMAN),
-        render::chips_delta(s[HUMAN.index()]),
-        names.of(BOT),
-        render::chips_delta(s[BOT.index()]),
-    );
-    match (opponent.kind, bot) {
-        (OpponentKind::Cfr, Some(b)) => t.push_str(&format!(
-            "  Bot decisions in completed hands: {} total, {} from policy, {} explicit \
-             fallback (uniform legal, unseen infoset)\n",
-            b.decisions, b.policy_hits, b.fallbacks
-        )),
-        (OpponentKind::Cfr, None) => {}
-        (_, b) => t.push_str(&format!(
-            "  Bot: {} ({} decisions; no trained policy in use)\n",
-            opponent.agent.label(),
-            b.map_or(0, |b| b.decisions)
-        )),
+fn write_lines<W: Write>(out: &mut W, lines: &[String]) -> io::Result<()> {
+    for l in lines {
+        writeln!(out, "{l}")?;
     }
-    t
+    Ok(())
 }
 
 fn read_line<R: BufRead>(input: &mut R) -> io::Result<Option<String>> {
@@ -183,45 +179,42 @@ fn read_line<R: BufRead>(input: &mut R) -> io::Result<Option<String>> {
     }
 }
 
+/// What the in-hand prompt can show besides the menu.
+pub struct PromptContext<'a> {
+    /// Rendered stats panel.
+    pub stats: &'a [String],
+    /// Rendered help.
+    pub help: &'a [String],
+}
+
 /// Prompts until a legal action, quit, or EOF. Takes only the observation,
 /// so it cannot alter the game state; invalid input just re-prompts.
 pub fn read_decision<R: BufRead, W: Write>(
     obs: &PlayerObservation,
-    stats: &str,
-    style: Style,
+    ctx: &PromptContext<'_>,
+    ui: &Ui,
     input: &mut R,
     out: &mut W,
 ) -> io::Result<HumanChoice> {
     loop {
-        write!(out, "  {} ", style.bold("Your action>"))?;
+        write!(out, "{}", screens::action_prompt(ui))?;
         out.flush()?;
         let Some(line) = read_line(input)? else {
             writeln!(out)?;
             return Ok(HumanChoice::InputClosed);
         };
+        writeln!(out)?;
         match input::parse_in_hand(&line, &obs.legal_actions) {
-            InHand::Act(a) => {
-                writeln!(out)?;
-                return Ok(HumanChoice::Act(a));
-            }
-            InHand::Quit => {
-                writeln!(out)?;
-                return Ok(HumanChoice::Quit);
-            }
-            InHand::Help => {
-                writeln!(out)?;
-                write!(out, "{}", help_text())?;
-            }
-            InHand::Stats => {
-                writeln!(out)?;
-                write!(out, "{stats}")?;
-            }
+            InHand::Act(a) => return Ok(HumanChoice::Act(a)),
+            InHand::Quit => return Ok(HumanChoice::Quit),
+            InHand::Help => write_lines(out, ctx.help)?,
+            InHand::Stats => write_lines(out, ctx.stats)?,
             InHand::Invalid(why) => {
-                writeln!(out)?;
-                writeln!(out, "  Invalid input ({why}): {:?}", line.trim())?;
+                let msg = format!("  Invalid input ({why}): {:?}", line.trim());
+                writeln!(out, "{}", ui.paint(Role::Warn, &term::fit(&msg, ui.width)))?;
             }
         }
-        writeln!(out, "  Options: {}", render::action_menu(obs, style))?;
+        write_lines(out, &table::menu(obs, ui))?;
     }
 }
 
@@ -236,69 +229,55 @@ pub fn run_session<R: BufRead, W: Write>(
     opponent: &mut Opponent,
     out: &mut W,
 ) -> io::Result<SessionSummary> {
-    let style = cfg.style;
+    let ui = cfg.ui;
     let names = Names { human: HUMAN };
     let rules = RulesConfig::standard(cfg.depth);
+    let bb = rules.big_blind;
     let mut m = Match::new(rules, HUMAN).map_err(io_err)?;
     let mut bot_snapshot = opponent.agent.infer_stats();
+    let label = opponent.agent.label();
+    let pause = |out: &mut W| -> io::Result<()> {
+        if !cfg.pace.is_zero() {
+            out.flush()?;
+            std::thread::sleep(cfg.pace);
+        }
+        Ok(())
+    };
 
-    writeln!(
-        out,
-        "{}",
-        style.bold(&format!(
-            "MAKO {} - heads-up no-limit hold'em",
-            crate_version()
-        ))
-    )?;
-    for line in &opponent.banner {
-        writeln!(out, "{line}")?;
-    }
-    if let HumanSeat::Auto(p) = &human {
-        writeln!(out, "Your seat: scripted --auto {}", p.policy.name())?;
-    }
-    writeln!(
-        out,
-        "Session seed {} | {} hand(s) | {} BB deep ({} chips) | blinds {}/{}",
+    let dot = ui.frame().dot;
+    let mut setup = vec![format!(
+        "Session seed {} {dot} {} hand(s) {dot} {} BB deep ({} chips) {dot} blinds {}/{}",
         cfg.seed,
         cfg.hands,
         cfg.depth.big_blinds(),
         rules.starting_stack,
         rules.small_blind,
         rules.big_blind
-    )?;
-    writeln!(
+    )];
+    if let HumanSeat::Auto(p) = &human {
+        setup.push(format!("Your seat: scripted --auto {}", p.policy.name()));
+    }
+    setup.push(format!("Replay: {}", cfg.replay));
+    write_lines(
         out,
-        "Replay: mako --seed {} --hands {} --depth {}\n",
-        cfg.seed,
-        cfg.hands,
-        cfg.depth.big_blinds()
+        &screens::session_header(&ui, crate_version(), &opponent.banner, &setup),
     )?;
+    writeln!(out)?;
 
     let mut end = EndReason::Completed;
     let mut abandoned = false;
 
     'session: for i in 0..cfg.hands {
         let mut hand: HandState = m.start_hand(hand_deck(cfg.seed, i)).map_err(io_err)?;
-        let button = hand.observation(HUMAN).button;
-        writeln!(
+        let info = TableInfo {
+            hand: i + 1,
+            hands: cfg.hands,
+            opponent: &label,
+            names,
+        };
+        write_lines(
             out,
-            "{}",
-            style.accent(&format!(
-                "======== Hand {} of {} | button: {} ========",
-                i + 1,
-                cfg.hands,
-                names.of(button)
-            ))
-        )?;
-        let first = hand.observation(HUMAN);
-        writeln!(
-            out,
-            "  Blinds posted: {} {} (SB), {} {} (BB). Your cards: {}",
-            names.of(button),
-            first.street_contributions[button.index()],
-            names.of(button.other()),
-            first.street_contributions[button.other().index()],
-            style.cards(&first.hole_cards)
+            &screens::hand_header(&ui, &hand.observation(HUMAN), i + 1, cfg.hands, names),
         )?;
 
         let mut steps = 0u32;
@@ -311,27 +290,33 @@ pub fn run_session<R: BufRead, W: Write>(
             }
             let obs = hand.observation(actor);
             let before_street = obs.street;
-            let street_max = obs.street_contributions.iter().copied().max().unwrap_or(0);
             let action = if actor == BOT {
+                pause(out)?;
                 let d = opponent.agent.act(&obs).map_err(io_err)?;
                 *obs.legal_actions
                     .iter()
                     .find(|a| a.kind == d.action)
                     .ok_or_else(|| io_err("bot chose an action that is not legal"))?
             } else {
-                writeln!(out, "{}", render::table(&obs, names, style).trim_end())?;
-                writeln!(out, "  Options: {}", render::action_menu(&obs, style))?;
+                write_lines(out, &table::table_screen(&obs, &info, &ui))?;
+                write_lines(out, &table::menu(&obs, &ui))?;
                 match &mut human {
                     HumanSeat::Auto(p) => {
                         let a = p
                             .choose(&obs)
                             .ok_or_else(|| io_err("no legal action on player's turn"))?;
-                        writeln!(out, "  {} {}", style.bold("Your action>"), key_word(a))?;
+                        writeln!(out, "{}{}", screens::action_prompt(&ui), input::key(a.kind))?;
                         a
                     }
                     HumanSeat::Lines(r) => {
-                        let stats = stats_text(&m, names, opponent, bot_snapshot);
-                        match read_decision(&obs, &stats, style, r, out)? {
+                        let stats =
+                            stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui);
+                        let help = help::in_hand(&ui, &label);
+                        let ctx = PromptContext {
+                            stats: &stats,
+                            help: &help,
+                        };
+                        match read_decision(&obs, &ctx, &ui, r, out)? {
                             HumanChoice::Act(a) => a,
                             HumanChoice::Quit => {
                                 end = EndReason::Quit;
@@ -350,24 +335,17 @@ pub fn run_session<R: BufRead, W: Write>(
             let outcome = hand.apply_legal(&action).map_err(io_err)?;
             writeln!(
                 out,
-                "  > {} {}",
-                names.of(actor),
-                render::describe_record(&outcome.record, street_max, actor == HUMAN)
+                "{}",
+                screens::action_event(&ui, &outcome.record, &obs, names)
             )?;
             let now = hand.observation(HUMAN);
             if now.street != before_street && now.terminal.is_none() {
-                writeln!(
-                    out,
-                    "  --- {} {} | pot {} ---",
-                    render::street_name(now.street),
-                    style.board(&now.board),
-                    now.pot
-                )?;
+                pause(out)?;
+                writeln!(out, "{}", screens::street_banner(&ui, &now))?;
             }
         }
 
-        let final_obs = hand.observation(HUMAN);
-        write!(out, "{}", render::result(&final_obs, names, style))?;
+        write_lines(out, &screens::result(&ui, &hand.observation(HUMAN), names))?;
         if let Some(stacks) = hand.final_stacks() {
             debug_assert_eq!(
                 u64::from(stacks[0]) + u64::from(stacks[1]),
@@ -376,13 +354,16 @@ pub fn run_session<R: BufRead, W: Write>(
         }
         m.record(&hand);
         bot_snapshot = opponent.agent.infer_stats();
-        write!(out, "{}", stats_text(&m, names, opponent, bot_snapshot))?;
+        write_lines(
+            out,
+            &stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui),
+        )?;
         writeln!(out)?;
 
         if i + 1 < cfg.hands {
             if let HumanSeat::Lines(r) = &mut human {
                 loop {
-                    write!(out, "  [Enter] next hand, 'stats', or 'quit'> ")?;
+                    write!(out, "{}", screens::between_prompt(&ui))?;
                     out.flush()?;
                     let Some(line) = read_line(r)? else {
                         writeln!(out)?;
@@ -396,14 +377,14 @@ pub fn run_session<R: BufRead, W: Write>(
                             end = EndReason::Quit;
                             break 'session;
                         }
-                        BetweenHands::Stats => {
-                            write!(out, "{}", stats_text(&m, names, opponent, bot_snapshot))?
-                        }
-                        BetweenHands::Help => {
-                            writeln!(out, "  Press Enter (or 'c') to deal, 'quit' to stop.")?
-                        }
+                        BetweenHands::Stats => write_lines(
+                            out,
+                            &stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui),
+                        )?,
+                        BetweenHands::Help => write_lines(out, &help::between_hands(&ui, &label))?,
                         BetweenHands::Invalid => {
-                            writeln!(out, "  Invalid input: {:?}", line.trim())?
+                            let msg = format!("  Invalid input: {:?}", line.trim());
+                            writeln!(out, "{}", ui.paint(Role::Warn, &term::fit(&msg, ui.width)))?
                         }
                     }
                 }
@@ -412,21 +393,33 @@ pub fn run_session<R: BufRead, W: Write>(
     }
 
     let score = m.score();
+    writeln!(out, "{}", ui.rule(""))?;
     match end {
         EndReason::Completed => writeln!(out, "Session complete.")?,
         EndReason::Quit => writeln!(out, "You quit the session.")?,
         EndReason::InputClosed => writeln!(out, "Input closed; ending the session.")?,
     }
     if abandoned {
-        writeln!(out, "The unfinished hand was abandoned and is not scored.")?;
+        write_lines(
+            out,
+            &term::wrap(
+                "The unfinished hand was abandoned and is not scored.",
+                ui.width,
+                "",
+                "    ",
+            ),
+        )?;
     }
-    writeln!(
-        out,
-        "Final: {} hand(s) played. You {} / Bot {} chips (vs {}).",
+    let final_line = format!(
+        "Final: {} hand(s) played. You {} / Bot {} chips.",
         m.hands_played(),
-        render::chips_delta(score[HUMAN.index()]),
-        render::chips_delta(score[BOT.index()]),
-        opponent.agent.label()
+        chips_delta(score[HUMAN.index()]),
+        chips_delta(score[BOT.index()]),
+    );
+    write_lines(out, &term::wrap(&final_line, ui.width, "", "    "))?;
+    write_lines(
+        out,
+        &term::wrap(&format!("Opponent: {label}"), ui.width, "", "    "),
     )?;
     out.flush()?;
     Ok(SessionSummary {
@@ -435,10 +428,6 @@ pub fn run_session<R: BufRead, W: Write>(
         end,
         abandoned_hand: abandoned,
     })
-}
-
-fn key_word(a: LegalAction) -> char {
-    input::key(a.kind)
 }
 
 /// The crate version string.
@@ -456,7 +445,9 @@ mod tests {
             seed,
             hands,
             depth: StackDepth::Bb20,
-            style: Style { color: false },
+            ui: Ui::plain(),
+            replay: format!("mako --seed {seed}"),
+            pace: std::time::Duration::ZERO,
         }
     }
 
@@ -565,8 +556,13 @@ mod tests {
         let obs = hand.observation(HUMAN);
         let mut input = Cursor::new(b"zzz\n\n9\nk\nstats\nhelp\n".to_vec());
         let mut out = Vec::new();
-        let stats = stats_text(&m, Names { human: HUMAN }, &baseline(7), None);
-        let d = read_decision(&obs, &stats, Style { color: false }, &mut input, &mut out).unwrap();
+        let stats = stats::render(&session_stats(&m, &baseline(7), None, 2), &Ui::plain());
+        let help = help::in_hand(&Ui::plain(), "baseline");
+        let ctx = PromptContext {
+            stats: &stats,
+            help: &help,
+        };
+        let d = read_decision(&obs, &ctx, &Ui::plain(), &mut input, &mut out).unwrap();
         assert_eq!(d, HumanChoice::InputClosed);
         assert_eq!(hand, snapshot);
         let t = String::from_utf8(out).unwrap();

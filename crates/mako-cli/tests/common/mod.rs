@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use mako_cfr::artifact::{ArtifactMetadata, StrategyArtifact};
 use mako_cfr::train::{TrainConfig, train};
 use mako_cli::game::{BOT, HUMAN, hand_deck};
-use mako_cli::render::SHOWDOWN_MARKER;
+use mako_cli::ui::SHOWDOWN_MARKER;
 use mako_core::card::Card;
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandConfig, HandState};
@@ -19,9 +19,23 @@ pub const TINY_LABEL: &str = "test: tiny cli fixture, no strength claim";
 
 /// Runs the binary with `args`, feeding `stdin` then EOF.
 pub fn mako(args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mako"))
-        .args(args)
+    mako_env(args, stdin, &[])
+}
+
+/// [`mako`] with extra environment variables set after the fixed ones.
+pub fn mako_env(args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mako"));
+    cmd.args(args)
+        // A fixed environment: 80 columns, ASCII glyphs, no colour hints.
         .env_remove("NO_COLOR")
+        .env_remove("COLUMNS")
+        .env_remove("COLORTERM")
+        .env("LC_ALL", "C")
+        .env("TERM", "xterm");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -80,7 +94,7 @@ pub fn write_tmp(name: &str, bytes: &[u8]) -> PathBuf {
 
 /// The output section of each hand, split on the hand header.
 pub fn hand_sections(out: &str) -> Vec<&str> {
-    out.split("======== Hand ").skip(1).collect()
+    out.split("\n-- Hand ").skip(1).collect()
 }
 
 /// Hole cards of (human, bot) for hand `i` at 20BB, recomputed with the

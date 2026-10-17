@@ -1,0 +1,11 @@
++= Mako ================================================ Hand 2/5 | Hand over =+
+|   Bot  BB     [##][##]  stack   38  bet    0                                 |
+|                                                                              |
+|         Board [--][--][--][--][--]   Pot 0                                   |
+|                                                                              |
+|   You  BTN/SB [9c][8h]  stack   42  bet    0                                 |
++= vs cfr 20BB (500k it): smoke: trained for plumbing, not competition ========+
+  Log: Preflop: You raise to 4 (half pot), Bot folds
+  Bot folds. You win the pot.
+  Board [--][--][--][--][--]   Bot's cards stay hidden: [##][##]
+  You win. You +2 / Bot -2

@@ -213,7 +213,7 @@ fn missing_artifact_cfr_exits_2_auto_warns_loudly() {
     assert!(out.contains("missing"));
     assert!(out.contains("UNTRAINED baseline"));
     assert!(out.contains("scripts/train_smoke.sh"));
-    assert!(out.contains(&format!("(vs {BASELINE_LABEL})")));
+    assert!(out.contains(&format!("Opponent: {BASELINE_LABEL}")));
     assert!(!out.contains("CFR policy"));
 }
 
