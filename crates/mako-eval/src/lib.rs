@@ -1,18 +1,28 @@
-//! `mako-eval` — placeholder crate created by M-00 (workspace scaffold).
+//! `mako-eval`: independent, paired-seed, seat-swapped policy evaluation
+//! (M-19).
 //!
-//! Real functionality is added by later tasks in `docs/TASKS.json`.
+//! * [`agent`]: the `mako_cfr::infer` agent contract (re-export)
+//! * [`baselines`]: rule-bot baselines (random legal, check/call, tight)
+//! * [`matchup`]: the paired match runner and its information boundary
+//! * [`stats`]: mean / sample SD / normal CI / seeded bootstrap
+//! * [`report`]: per-matchup BB/100 summaries, by position
+//! * [`gate`]: locked PROMOTE/HOLD criteria and the disclaimer
+//! * [`config`]: strict `configs/eval*.toml` parser
+//! * [`evaluate`]: end-to-end orchestration
+//! * [`output`]: text and JSON reports
+//!
+//! Methodology and limitations: `docs/EVALUATION.md`. Nothing here measures
+//! exploitability or distance to equilibrium, and no GTO claim is made.
 
-/// Crate version, exposed so the scaffold has a testable item.
+pub mod agent;
+pub mod baselines;
+pub mod config;
+pub mod evaluate;
+pub mod gate;
+pub mod matchup;
+pub mod output;
+pub mod report;
+pub mod stats;
+
+/// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// Scaffold: reference workspace dependencies so the crate graph is exercised.
-const _: &str = mako_core::VERSION;
-const _: &str = mako_cfr::VERSION;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn scaffold_version_is_set() {
-        assert!(!super::VERSION.is_empty());
-    }
-}

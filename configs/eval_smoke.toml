@@ -1,0 +1,38 @@
+# Mako evaluation smoke configuration (M-19).
+#
+# LOCKED before running: seeds, sample size, opponents and gate thresholds
+# are fixed here and must not be tuned after looking at results. Change them
+# only in a reviewed commit, and say why.
+#
+# The smoke artifact is a plumbing policy (configs/smoke.toml): no strength,
+# Nash or GTO claim. This evaluation measures BB/100 against weak fixed
+# baselines only; it computes no exploitability. See docs/EVALUATION.md.
+
+[policy]
+artifact = "artifacts/smoke_20bb.mako"
+# Checksum of the deterministic smoke artifact (from its manifest,
+# artifact_fnv1a64). A retrained or different artifact fails the gate.
+expected_checksum = "0xe673b32895f96760"
+agent_seed = 1                  # agents' own draws; the harness samples with its own streams
+
+[rules]
+depth_bb = 20
+small_blind = 1
+big_blind = 2
+
+[eval]
+# Evaluation deck stream. Must differ from the training seed (20261115) and
+# the abstraction seed (1296126799); the harness refuses equal seeds.
+base_seed = 4_157_113_009
+deal_pairs = 2_000              # 4,000 hands per matchup
+opponents = ["random", "checkcall", "tight", "mirror"]
+sanity_random_vs_checkcall = true
+bootstrap_resamples = 2_000
+bootstrap_seed = 9_001
+max_actions_per_hand = 512
+
+[gate]
+min_hands = 4_000
+require_positive_ci_vs = ["random", "checkcall"]
+max_fallback_rate_bp = 500      # 5% of candidate decisions may hit unseen info sets
+require_pinned_checksum = true
