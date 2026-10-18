@@ -1,8 +1,8 @@
 /target/
 /build/
-/dist/
-/pkg/
-/node_modules/
+dist/
+pkg/
+node_modules/
 /.next/
 *.mako
 *.ckpt
