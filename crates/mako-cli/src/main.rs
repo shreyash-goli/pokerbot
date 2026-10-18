@@ -7,8 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use mako_cli::args::{self, Command};
 use mako_cli::game::{self, AutoPlayer, HumanSeat, SessionConfig};
-use mako_cli::opponent;
 use mako_cli::ui::{Ui, term};
+use mako_cli::{history, opponent};
 
 /// Pause before bot actions and new streets in interactive TTY play.
 const PACE: Duration = Duration::from_millis(350);
@@ -37,6 +37,16 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if opts.reset_stats {
+        let (msg, ok) = history::reset(&opts.history, history::default_path);
+        return if ok {
+            println!("{msg}");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("mako: error: {msg}");
+            ExitCode::FAILURE
+        };
+    }
     let env = |k: &str| std::env::var(k).ok();
     let stdout_tty = io::stdout().is_terminal();
     let ui = Ui {
@@ -57,6 +67,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let (mut recorder, notices) = history::open(&opts.history, history::default_path);
     let interactive = opts.auto.is_none() && stdout_tty && io::stdin().is_terminal();
     let cfg = SessionConfig {
         seed,
@@ -69,13 +80,14 @@ fn main() -> ExitCode {
         } else {
             Duration::ZERO
         },
+        notices,
     };
     let human = match opts.auto {
         Some(p) => HumanSeat::Auto(AutoPlayer::new(p, cfg.seed)),
         None => HumanSeat::Lines(io::stdin().lock()),
     };
     let mut out = io::stdout().lock();
-    match game::run_session(&cfg, human, &mut opp, &mut out) {
+    match game::run_session_with_history(&cfg, human, &mut opp, &mut recorder, &mut out) {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {

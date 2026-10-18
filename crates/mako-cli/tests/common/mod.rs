@@ -17,6 +17,21 @@ use mako_core::state::{HandConfig, HandState};
 
 pub const TINY_LABEL: &str = "test: tiny cli fixture, no strength claim";
 
+/// A fresh per-invocation directory used as the child's `MAKO_HOME` and
+/// `HOME`, so a test that passes no history flag can never touch the real
+/// home directory or `~/.mako`. Set on the child `Command` only.
+fn sandbox_home() -> std::path::PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let d = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "mako-home-{}-{}-{}",
+        module_path!().replace("::", "-"),
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&d).expect("sandbox home");
+    d
+}
+
 /// Runs the binary with `args`, feeding `stdin` then EOF.
 pub fn mako(args: &[&str], stdin: &str) -> Output {
     mako_env(args, stdin, &[])
@@ -25,13 +40,29 @@ pub fn mako(args: &[&str], stdin: &str) -> Output {
 /// [`mako`] with extra environment variables set after the fixed ones.
 pub fn mako_env(args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mako"));
-    cmd.args(args)
+    // Tests that do not choose a history location get `--no-history`, so
+    // transcripts stay deterministic and nothing is written anywhere.
+    let picks_history = args
+        .iter()
+        .any(|a| a.starts_with("--history") || *a == "--no-history" || *a == "--reset-stats")
+        || env.iter().any(|(k, _)| *k == "MAKO_HOME");
+    cmd.args(args);
+    if !picks_history
+        && !args
+            .iter()
+            .any(|a| matches!(*a, "--help" | "-h" | "--version" | "-V"))
+    {
+        cmd.arg("--no-history");
+    }
+    cmd
         // A fixed environment: 80 columns, ASCII glyphs, no colour hints.
         .env_remove("NO_COLOR")
         .env_remove("COLUMNS")
         .env_remove("COLORTERM")
         .env("LC_ALL", "C")
         .env("TERM", "xterm");
+    let home = sandbox_home();
+    cmd.env("MAKO_HOME", &home).env("HOME", &home);
     for (k, v) in env {
         cmd.env(k, v);
     }

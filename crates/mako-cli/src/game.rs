@@ -6,6 +6,12 @@
 //! does the same with the bot's choice. The bot is a
 //! [`mako_cfr::infer::Agent`] that receives only `observation(BOT)`; display
 //! is built only from `observation(HUMAN)`.
+//!
+//! Hand history (M-17): every **completed** hand is recorded with
+//! [`SessionRecorder::record_hand`] (which keeps only what the human seat may
+//! know) and saved right away. A hand abandoned by `quit` or end of input is
+//! neither scored nor recorded. A failed save prints a warning and play
+//! continues; the hand stays in memory and is written with the next save.
 
 use std::io::{self, BufRead, Write};
 
@@ -16,10 +22,12 @@ use mako_core::rng::{MakoRng, splitmix64_next};
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandState, Match};
 
+use mako_analysis::{SessionRecorder, SessionStats as AnalysisStats};
+
 use crate::args::AutoPolicy;
 use crate::input::{self, BetweenHands, InHand};
 use crate::opponent::{Opponent, OpponentKind};
-use crate::ui::stats::{self, BotSources, SessionStats};
+use crate::ui::stats::{self, BotSources, HistoryView, SessionStats};
 use crate::ui::table::{self, TableInfo};
 use crate::ui::{Names, Role, Ui, chips_delta, help, screens, term};
 use mako_cfr::infer::InferStats;
@@ -68,6 +76,8 @@ pub struct SessionConfig {
     /// Pause before each bot action and street (zero = none). Only set for
     /// interactive TTY play without `--fast`.
     pub pace: std::time::Duration,
+    /// Extra lines for the session header (e.g. history load notices).
+    pub notices: Vec<String>,
 }
 
 /// Who plays the human seat.
@@ -144,7 +154,27 @@ pub enum HumanChoice {
     InputClosed,
 }
 
-fn session_stats(m: &Match, opponent: &Opponent, bot: Option<InferStats>, bb: u32) -> SessionStats {
+/// Session and lifetime analysis statistics from the recorder.
+/// `session_start` is the number of records loaded before this session.
+fn history_view(rec: &SessionRecorder, session_start: usize) -> HistoryView {
+    let session = rec.records().get(session_start..).unwrap_or(&[]);
+    HistoryView {
+        session: AnalysisStats::from_records(session),
+        lifetime: *rec.stats(),
+        storage: match rec.store() {
+            Some(s) => format!("saved to {}", s.path().display()),
+            None => "not saved this session".to_string(),
+        },
+    }
+}
+
+fn session_stats(
+    m: &Match,
+    opponent: &Opponent,
+    bot: Option<InferStats>,
+    bb: u32,
+    history: Option<HistoryView>,
+) -> SessionStats {
     let s = m.score();
     let decisions = bot.map_or(0, |b| b.decisions);
     SessionStats {
@@ -161,7 +191,35 @@ fn session_stats(m: &Match, opponent: &Opponent, bot: Option<InferStats>, bb: u3
             },
             _ => BotSources::Untrained { decisions },
         },
+        history,
     }
+}
+
+/// Greedy word wrap that never cuts a word: a file path longer than the
+/// width gets a line of its own so it stays complete and copyable.
+pub fn wrap_whole_words(text: &str, width: usize, indent: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let used = if line.is_empty() {
+            0
+        } else {
+            line.chars().count() + 1
+        };
+        if !line.is_empty() && used + word.chars().count() > width {
+            out.push(std::mem::take(&mut line));
+        }
+        if line.is_empty() {
+            line.push_str(if out.is_empty() { "" } else { indent });
+        } else {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        out.push(line);
+    }
+    out
 }
 
 fn write_lines<W: Write>(out: &mut W, lines: &[String]) -> io::Result<()> {
@@ -222,11 +280,23 @@ fn io_err(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
 }
 
-/// Plays a session, writing the transcript to `out`.
+/// Plays a session without persistent history (an in-memory recorder).
 pub fn run_session<R: BufRead, W: Write>(
+    cfg: &SessionConfig,
+    human: HumanSeat<R>,
+    opponent: &mut Opponent,
+    out: &mut W,
+) -> io::Result<SessionSummary> {
+    run_session_with_history(cfg, human, opponent, &mut SessionRecorder::ephemeral(), out)
+}
+
+/// Plays a session, writing the transcript to `out` and recording every
+/// completed hand in `history` (saved after each hand).
+pub fn run_session_with_history<R: BufRead, W: Write>(
     cfg: &SessionConfig,
     mut human: HumanSeat<R>,
     opponent: &mut Opponent,
+    history: &mut SessionRecorder,
     out: &mut W,
 ) -> io::Result<SessionSummary> {
     let ui = cfg.ui;
@@ -236,6 +306,8 @@ pub fn run_session<R: BufRead, W: Write>(
     let mut m = Match::new(rules, HUMAN).map_err(io_err)?;
     let mut bot_snapshot = opponent.agent.infer_stats();
     let label = opponent.agent.label();
+    let history_label = opponent.history_label();
+    let session_start = history.records().len();
     let pause = |out: &mut W| -> io::Result<()> {
         if !cfg.pace.is_zero() {
             out.flush()?;
@@ -262,6 +334,16 @@ pub fn run_session<R: BufRead, W: Write>(
         out,
         &screens::session_header(&ui, crate_version(), &opponent.banner, &setup),
     )?;
+    for n in &cfg.notices {
+        let role = if n.contains("WARNING") {
+            Role::Warn
+        } else {
+            Role::Dim
+        };
+        for l in wrap_whole_words(n, ui.width, "  ") {
+            writeln!(out, "{}", ui.paint(role, &l))?;
+        }
+    }
     writeln!(out)?;
 
     let mut end = EndReason::Completed;
@@ -309,8 +391,11 @@ pub fn run_session<R: BufRead, W: Write>(
                         a
                     }
                     HumanSeat::Lines(r) => {
-                        let stats =
-                            stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui);
+                        let view = history_view(history, session_start);
+                        let stats = stats::render_full(
+                            &session_stats(&m, opponent, bot_snapshot, bb, Some(view)),
+                            &ui,
+                        );
                         let help = help::in_hand(&ui, &label);
                         let ctx = PromptContext {
                             stats: &stats,
@@ -353,10 +438,28 @@ pub fn run_session<R: BufRead, W: Write>(
             );
         }
         m.record(&hand);
+        let saved = match history.record_hand(&hand, HUMAN, &history_label) {
+            Ok(_) => history.save().map_err(|e| e.to_string()),
+            Err(e) => Err(format!("could not record the hand: {e}")),
+        };
+        if let Err(e) = saved {
+            let msg = format!("  Warning: hand history not saved ({e}); play continues.");
+            write_lines(
+                out,
+                &term::wrap(&msg, ui.width, "", "    ")
+                    .into_iter()
+                    .map(|l| ui.paint(Role::Warn, &l))
+                    .collect::<Vec<_>>(),
+            )?;
+        }
         bot_snapshot = opponent.agent.infer_stats();
+        let view = history_view(history, session_start);
         write_lines(
             out,
-            &stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui),
+            &stats::render(
+                &session_stats(&m, opponent, bot_snapshot, bb, Some(view)),
+                &ui,
+            ),
         )?;
         writeln!(out)?;
 
@@ -377,10 +480,16 @@ pub fn run_session<R: BufRead, W: Write>(
                             end = EndReason::Quit;
                             break 'session;
                         }
-                        BetweenHands::Stats => write_lines(
-                            out,
-                            &stats::render(&session_stats(&m, opponent, bot_snapshot, bb), &ui),
-                        )?,
+                        BetweenHands::Stats => {
+                            let view = history_view(history, session_start);
+                            write_lines(
+                                out,
+                                &stats::render_full(
+                                    &session_stats(&m, opponent, bot_snapshot, bb, Some(view)),
+                                    &ui,
+                                ),
+                            )?
+                        }
                         BetweenHands::Help => write_lines(out, &help::between_hands(&ui, &label))?,
                         BetweenHands::Invalid => {
                             let msg = format!("  Invalid input: {:?}", line.trim());
@@ -403,7 +512,7 @@ pub fn run_session<R: BufRead, W: Write>(
         write_lines(
             out,
             &term::wrap(
-                "The unfinished hand was abandoned and is not scored.",
+                "The unfinished hand was abandoned and is not scored or saved.",
                 ui.width,
                 "",
                 "    ",
@@ -448,6 +557,7 @@ mod tests {
             ui: Ui::plain(),
             replay: format!("mako --seed {seed}"),
             pace: std::time::Duration::ZERO,
+            notices: Vec::new(),
         }
     }
 
@@ -556,7 +666,10 @@ mod tests {
         let obs = hand.observation(HUMAN);
         let mut input = Cursor::new(b"zzz\n\n9\nk\nstats\nhelp\n".to_vec());
         let mut out = Vec::new();
-        let stats = stats::render(&session_stats(&m, &baseline(7), None, 2), &Ui::plain());
+        let stats = stats::render(
+            &session_stats(&m, &baseline(7), None, 2, None),
+            &Ui::plain(),
+        );
         let help = help::in_hand(&Ui::plain(), "baseline");
         let ctx = PromptContext {
             stats: &stats,
@@ -595,6 +708,20 @@ mod tests {
         let (s, _) = run(7, 3, lines(&format!("{script}quit\n")));
         assert!(s.hands_completed >= 1);
         assert_eq!(s.score[0] + s.score[1], 0);
+    }
+
+    #[test]
+    fn whole_word_wrap_keeps_paths() {
+        let path = format!("/{}", "x".repeat(100));
+        let lines = wrap_whole_words(&format!("moved to {path} ok now"), 40, "  ");
+        assert!(lines.iter().any(|l| l.trim() == path), "{lines:?}");
+        assert_eq!(lines.join(" ").split_whitespace().count(), 5);
+        assert!(
+            lines
+                .iter()
+                .filter(|l| !l.contains(&path))
+                .all(|l| l.len() <= 40)
+        );
     }
 
     #[test]

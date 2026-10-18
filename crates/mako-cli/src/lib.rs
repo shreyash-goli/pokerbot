@@ -6,6 +6,8 @@
 //! * [`input`] — parsing of player commands against the engine's legal actions
 //! * [`ui`] — retro cream/sepia terminal UI rendered from a `PlayerObservation`
 //! * [`game`] — the session loop (human vs bot) and seed derivation
+//! * [`history`] — opening/resetting the saved hand history (M-17, storage
+//!   and statistics in `mako-analysis`)
 //!
 //! The binary (`src/main.rs`) is a thin wrapper over [`game::run_session`].
 //! All game-state transitions go through `mako_core::state::HandState`;
@@ -13,9 +15,7 @@
 
 pub mod args;
 pub mod game;
+pub mod history;
 pub mod input;
 pub mod opponent;
 pub mod ui;
-
-// Analysis (M-17/M-18) plugs in later; keep the dependency graph exercised.
-const _: &str = mako_analysis::VERSION;

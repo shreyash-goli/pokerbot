@@ -1,17 +1,21 @@
-//! `mako-analysis` — placeholder crate created by M-00 (workspace scaffold).
+//! `mako-analysis` — hand history, session statistics and (later) coaching
+//! and opponent modelling, all from information a player may legitimately
+//! know.
 //!
-//! Real functionality is added by later tasks in `docs/TASKS.json`.
+//! * [`history`] — [`history::HandRecord`], built from the human seat's
+//!   viewer-filtered events, and the `mako-history v1` text format (M-17).
+//! * [`stats`] — [`stats::SessionStats`]: net chips, BB/100, VPIP, PFR,
+//!   aggression, showdowns and positional splits from public actions (M-17).
+//! * [`store`] — atomic local persistence and the CLI-facing
+//!   [`store::SessionRecorder`] (M-17).
 
-/// Crate version, exposed so the scaffold has a testable item.
+pub mod history;
+pub mod stats;
+pub mod store;
+
+pub use history::{HandRecord, HistoryError, OpponentLabel};
+pub use stats::{PlayerStats, Role, SessionStats, SplitStats};
+pub use store::{LoadNotice, ResetOutcome, SessionRecorder, SessionStore, StoreError};
+
+/// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// Scaffold: reference workspace dependencies so the crate graph is exercised.
-const _: &str = mako_core::VERSION;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn scaffold_version_is_set() {
-        assert!(!super::VERSION.is_empty());
-    }
-}

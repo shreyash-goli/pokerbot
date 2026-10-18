@@ -11,19 +11,24 @@ pub const IN_HAND_COMMANDS: [(&str, &str, &str); 3] = [
     (
         "stats",
         "s",
-        "session score and where the bot's decisions came from",
+        "session and lifetime stats (VPIP, PFR, aggression, showdowns, button/BB) \
+         and where the bot's decisions came from",
     ),
     (
         "quit",
         "q",
-        "end the session (an unfinished hand is not scored)",
+        "end the session (an unfinished hand is not scored or saved)",
     ),
 ];
 
 /// `(command, aliases, description)` accepted between hands.
 pub const BETWEEN_COMMANDS: [(&str, &str, &str); 4] = [
     ("continue", "Enter, c", "deal the next hand"),
-    ("stats", "s", "session score and bot decision sources"),
+    (
+        "stats",
+        "s",
+        "session and lifetime stats and bot decision sources",
+    ),
     ("help", "?", "show this help"),
     ("quit", "q", "end the session"),
 ];
@@ -57,6 +62,7 @@ pub fn in_hand(ui: &Ui, opponent: &str) -> Vec<String> {
         "    ",
     ));
     out.extend(command_lines(ui, &IN_HAND_COMMANDS));
+    out.extend(stat_terms(ui));
     out.extend(opponent_modes(ui, opponent));
     out
 }
@@ -65,8 +71,24 @@ pub fn in_hand(ui: &Ui, opponent: &str) -> Vec<String> {
 pub fn between_hands(ui: &Ui, opponent: &str) -> Vec<String> {
     let mut out = vec![ui.paint(Role::Strong, "  Commands between hands:")];
     out.extend(command_lines(ui, &BETWEEN_COMMANDS));
+    out.extend(stat_terms(ui));
     out.extend(opponent_modes(ui, opponent));
     out
+}
+
+/// Short definitions of the statistics shown by `stats`.
+fn stat_terms(ui: &Ui) -> Vec<String> {
+    wrap(
+        "Stats use public actions of completed hands only. VPIP = share of hands \
+         where a player voluntarily put chips in preflop (a call or raise; the big \
+         blind checking its option is not VPIP; walks, where the big blind never \
+         acts, are excluded). PFR = share with a preflop bet or raise (a limp is \
+         not PFR). n/a means there is nothing to divide by yet. Completed hands \
+         are saved to the history file (see --history, --no-history, --reset-stats).",
+        ui.width,
+        "  ",
+        "    ",
+    )
 }
 
 fn opponent_modes(ui: &Ui, opponent: &str) -> Vec<String> {

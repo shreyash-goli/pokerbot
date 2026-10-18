@@ -82,6 +82,16 @@ pub struct Opponent {
     pub banner: Banner,
     /// The artifact path that was tried (for the replay hint).
     pub strategy_path: PathBuf,
+    /// Checksum of the loaded policy artifact (`None` for the baseline).
+    pub checksum: Option<u64>,
+}
+
+impl Opponent {
+    /// The label stored with each saved hand (M-17): the agent's label and,
+    /// for a trained policy, the artifact checksum.
+    pub fn history_label(&self) -> mako_analysis::OpponentLabel {
+        mako_analysis::OpponentLabel::new(&self.agent.label(), self.checksum)
+    }
 }
 
 /// Selection failed (only for `--bot cfr`); the message names the reason.
@@ -165,9 +175,11 @@ pub fn select(
             kind: OpponentKind::Baseline,
             banner: baseline_banner(),
             strategy_path: path.to_path_buf(),
+            checksum: None,
         }),
         BotKind::Cfr => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
+                checksum: Some(agent.metadata().checksum),
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -182,6 +194,7 @@ pub fn select(
         },
         BotKind::Auto => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
+                checksum: Some(agent.metadata().checksum),
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -192,6 +205,7 @@ pub fn select(
                 kind: OpponentKind::BaselineFallback,
                 banner: loud_fallback_banner(depth, path, &why),
                 strategy_path: path.to_path_buf(),
+                checksum: None,
             }),
         },
     }

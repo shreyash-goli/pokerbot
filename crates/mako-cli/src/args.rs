@@ -43,6 +43,18 @@ impl AutoPolicy {
     }
 }
 
+/// Where the hand history (M-17) is kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum HistoryChoice {
+    /// `$MAKO_HOME/session-history.txt`, else `~/.mako/session-history.txt`.
+    #[default]
+    Default,
+    /// `--history <path>`.
+    Path(String),
+    /// `--no-history`: in memory only, nothing is written.
+    Disabled,
+}
+
 /// A fully parsed session configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
@@ -62,6 +74,10 @@ pub struct Options {
     pub auto: Option<AutoPolicy>,
     /// `--strategy`; `None` means `artifacts/smoke_<depth>bb.mako`.
     pub strategy: Option<String>,
+    /// `--history <path>` / `--no-history`.
+    pub history: HistoryChoice,
+    /// `--reset-stats`: delete the saved history file and exit.
+    pub reset_stats: bool,
 }
 
 impl Options {
@@ -111,6 +127,8 @@ impl Default for Options {
             fast: false,
             auto: None,
             strategy: None,
+            history: HistoryChoice::Default,
+            reset_stats: false,
         }
     }
 }
@@ -136,6 +154,8 @@ pub enum ArgError {
     UnknownAuto(String),
     /// The same option given twice (or `--color` with `--no-color`).
     Repeated(&'static str),
+    /// Two options that cannot be combined.
+    Conflict(&'static str, &'static str),
 }
 
 impl fmt::Display for ArgError {
@@ -161,8 +181,9 @@ impl fmt::Display for ArgError {
             ArgError::Repeated(flag) => write!(
                 f,
                 "{flag} given more than once (each option may appear once; \
-                 --no-color counts as --color)"
+                 --no-color counts as --color, --no-history as --history)"
             ),
+            ArgError::Conflict(a, b) => write!(f, "{a} cannot be combined with {b}"),
             ArgError::UnknownAuto(name) => {
                 write!(
                     f,
@@ -206,6 +227,13 @@ OPTIONS:
                           the wide two-pane table)
     --fast                No pauses between bot actions (pauses only ever
                           happen in interactive TTY play)
+    --history <path>      Hand history file (default $MAKO_HOME/session-history.txt,
+                          else ~/.mako/session-history.txt). Every completed hand
+                          is saved; quit/abandoned hands are not. Stats are
+                          computed from public actions only.
+    --no-history          Keep stats in memory only; write nothing
+    --reset-stats         Delete the saved hand history (only a Mako history
+                          file), print what was deleted, and exit
     -h, --help            Show this help
     -V, --version         Show the version
 
@@ -257,7 +285,7 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
         };
         match name {
             "--seed" | "--hands" | "--depth" | "--bot" | "--strategy" | "--auto" | "--width"
-            | "--glyphs" | "--fast" => once(match name {
+            | "--glyphs" | "--fast" | "--reset-stats" => once(match name {
                 "--seed" => "--seed",
                 "--hands" => "--hands",
                 "--depth" => "--depth",
@@ -266,8 +294,10 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
                 "--auto" => "--auto",
                 "--width" => "--width",
                 "--glyphs" => "--glyphs",
+                "--reset-stats" => "--reset-stats",
                 _ => "--fast",
             })?,
+            "--history" | "--no-history" => once("--history")?,
             "--color" | "--colour" | "--no-color" | "--no-colour" => once("--color")?,
             _ => {}
         }
@@ -304,6 +334,15 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
                 opts.width = Some(w);
             }
             "--fast" => opts.fast = true,
+            "--reset-stats" => opts.reset_stats = true,
+            "--no-history" => opts.history = HistoryChoice::Disabled,
+            "--history" => {
+                let v = take_value("--history", inline, &mut it)?;
+                if v.is_empty() {
+                    return Err(invalid("--history", v));
+                }
+                opts.history = HistoryChoice::Path(v.to_string());
+            }
             "--seed" => {
                 let v = take_value("--seed", inline, &mut it)?;
                 opts.seed = Some(v.parse().map_err(|_| invalid("--seed", v))?);
@@ -351,6 +390,9 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
             }
             _ => return Err(ArgError::UnknownFlag(arg.to_string())),
         }
+    }
+    if opts.reset_stats && opts.history == HistoryChoice::Disabled {
+        return Err(ArgError::Conflict("--reset-stats", "--no-history"));
     }
     Ok(Command::Play(opts))
 }
@@ -549,6 +591,36 @@ mod tests {
                 .replay_command(1, "a b.mako")
                 .ends_with("--strategy 'a b.mako'")
         );
+    }
+
+    #[test]
+    fn history_flags() {
+        assert_eq!(play(&[]).history, HistoryChoice::Default);
+        assert_eq!(
+            play(&["--history", "/tmp/x.txt"]).history,
+            HistoryChoice::Path("/tmp/x.txt".into())
+        );
+        assert_eq!(
+            play(&["--history=h.txt"]).history,
+            HistoryChoice::Path("h.txt".into())
+        );
+        assert_eq!(play(&["--no-history"]).history, HistoryChoice::Disabled);
+        let o = play(&["--reset-stats", "--history", "h.txt"]);
+        assert!(o.reset_stats);
+        assert_eq!(
+            parse(&["--history", "a", "--no-history"]),
+            Err(ArgError::Repeated("--history"))
+        );
+        assert_eq!(
+            parse(&["--reset-stats", "--no-history"]),
+            Err(ArgError::Conflict("--reset-stats", "--no-history"))
+        );
+        assert_eq!(
+            parse(&["--history"]),
+            Err(ArgError::MissingValue("--history"))
+        );
+        assert!(parse(&["--history="]).is_err());
+        assert!(USAGE.contains("--reset-stats") && USAGE.contains("--no-history"));
     }
 
     #[test]

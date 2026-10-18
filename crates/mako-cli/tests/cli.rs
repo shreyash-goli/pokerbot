@@ -10,12 +10,34 @@ use mako_core::card::Card;
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandConfig, HandState};
 
+/// A fresh per-invocation directory used as the child's `MAKO_HOME` and
+/// `HOME`, so a test that passes no history flag can never touch the real
+/// home directory or `~/.mako`. Set on the child `Command` only.
+fn sandbox_home() -> std::path::PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let d = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "mako-home-{}-{}-{}",
+        module_path!().replace("::", "-"),
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&d).expect("sandbox home");
+    d
+}
+
 /// Runs the binary. Unless the test picks a bot, `--bot baseline` is added
 /// so these tests never depend on a local trained artifact.
 fn mako(args: &[&str], stdin: &str) -> Output {
     let mut argv: Vec<&str> = args.to_vec();
     if !args.iter().any(|a| a.starts_with("--bot")) && !args.contains(&"--help") {
         argv.extend(["--bot", "baseline"]);
+    }
+    // No test here chooses a history location: never write one.
+    if !args
+        .iter()
+        .any(|a| matches!(*a, "--help" | "-h" | "--version" | "-V"))
+    {
+        argv.push("--no-history");
     }
     let mut child = Command::new(env!("CARGO_BIN_EXE_mako"))
         .args(&argv)
@@ -25,6 +47,8 @@ fn mako(args: &[&str], stdin: &str) -> Output {
         .env_remove("COLORTERM")
         .env("LC_ALL", "C")
         .env("TERM", "xterm")
+        .env("MAKO_HOME", sandbox_home())
+        .env("HOME", sandbox_home())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
