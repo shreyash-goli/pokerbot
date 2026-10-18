@@ -7,13 +7,12 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 
 import { type ClientOptions, createMakoClient, type MakoClient } from './client';
 import { type MakoTheme, resolveTheme, type ThemeProp } from './theme';
+import { phrase, wordLog } from './wording';
 import {
-  type ActionLogEntry,
   type BotKind,
   type CardCode,
   type DepthBB,
   type LegalActionDTO,
-  type MakoAction,
   MakoError,
   type PublicState,
   type StreetName,
@@ -79,36 +78,15 @@ function who(w: 'human' | 'mako'): string {
   return w === 'human' ? 'You' : 'Mako';
 }
 
-function actionLabel(a: LegalActionDTO): { main: string; sub: string } {
+/** Button text in the CLI menu's wording, e.g. "Raise to 6 (pot)". */
+function actionLabel(a: LegalActionDTO, s: PublicState): { main: string; sub: string } {
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   const add = a.chipsToCommit > 0 ? `+${a.chipsToCommit}` : '';
-  switch (a.type) {
-    case 'fold':
-      return { main: 'Fold', sub: '' };
-    case 'check':
-      return { main: 'Check', sub: '' };
-    case 'call':
-      return { main: `Call ${a.chipsToCommit}`, sub: '' };
-    case 'half_pot':
-      return { main: `½ Pot to ${a.raiseTo}`, sub: add };
-    case 'pot':
-      return { main: `Pot to ${a.raiseTo}`, sub: add };
-    case 'all_in':
-      return { main: `All-in to ${a.raiseTo}`, sub: add };
-  }
-}
-
-function logText(e: ActionLogEntry): string {
-  const me = e.actor === 'human';
-  const s = (third: string, base: string) => (me ? base : third);
-  const verbs: Record<MakoAction, string> = {
-    fold: s('folds', 'fold'),
-    check: s('checks', 'check'),
-    call: `${s('calls', 'call')} ${e.chipsCommitted}`,
-    half_pot: `${s('bets/raises', 'bet/raise')} half pot to ${e.raiseTo}`,
-    pot: `${s('bets/raises', 'bet/raise')} pot to ${e.raiseTo}`,
-    all_in: `${s('goes', 'go')} all-in to ${e.raiseTo}`,
-  };
-  return `${who(e.actor)} ${verbs[e.type]}`;
+  if (a.type === 'all_in') return { main: `All-in to ${a.raiseTo}`, sub: add };
+  if (a.type === 'call' && a.chipsToCommit === s.myStack) return { main: `Call ${a.chipsToCommit} (all-in)`, sub: '' };
+  const toCall = Math.max(0, s.botStreetChips - s.myStreetChips);
+  const main = cap(phrase(a.type, a.raiseTo, a.chipsToCommit, s.myStreetChips, toCall, true));
+  return { main, sub: a.type === 'half_pot' || a.type === 'pot' ? add : '' };
 }
 
 const STREETS: StreetName[] = ['preflop', 'flop', 'turn', 'river'];
@@ -144,6 +122,14 @@ export function MakoTable(props: MakoTableProps) {
   const [error, setError] = useState<MakoError | null>(null);
   const [loadError, setLoadError] = useState<MakoError | null>(null);
   const [mode, setMode] = useState<MakoClient['mode'] | null>(null);
+  const logRef = useRef<HTMLElement | null>(null);
+  // Keep the newest log entry in view (the log scrolls on small screens).
+  const logLen = state?.actionLog.length ?? 0;
+  const handNo = state?.handNumber ?? 0;
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logLen, handNo]);
   const onStateRef = useRef(onState);
   onStateRef.current = onState;
 
@@ -240,7 +226,8 @@ export function MakoTable(props: MakoTableProps) {
   const over = s.terminal !== null;
   const myTurn = s.actor === 'human' && !over;
   const revealed = s.botCards;
-  const logByStreet = STREETS.map((st) => ({ st, items: s.actionLog.filter((e) => e.street === st) })).filter(
+  const lines = wordLog(s.actionLog, s);
+  const logByStreet = STREETS.map((st) => ({ st, items: lines.filter((l) => l.street === st) })).filter(
     (g) => g.items.length > 0,
   );
   const board: Array<CardCode | null> = [0, 1, 2, 3, 4].map((i) => s.board[i] ?? null);
@@ -336,7 +323,7 @@ export function MakoTable(props: MakoTableProps) {
         <section className="mako-actions" aria-label="Your actions" data-testid="actions">
           {myTurn ? (
             s.legalActions.map((a) => {
-              const l = actionLabel(a);
+              const l = actionLabel(a, s);
               return (
                 <button
                   type="button"
@@ -363,7 +350,7 @@ export function MakoTable(props: MakoTableProps) {
         </div>
       )}
 
-      <section className="mako-panel mako-log" aria-label="Hand log" data-testid="log">
+      <section className="mako-panel mako-log" aria-label="Hand log" data-testid="log" ref={logRef}>
         {logByStreet.length === 0 && <div className="mako-dim">Blinds posted.</div>}
         {logByStreet.map((g) => (
           <div key={g.st}>
@@ -371,7 +358,7 @@ export function MakoTable(props: MakoTableProps) {
             <ol>
               {g.items.map((e, i) => (
                 <li key={i} className={e.actor === 'human' ? 'mako-log-me' : undefined}>
-                  {logText(e)}
+                  {e.text}
                 </li>
               ))}
             </ol>

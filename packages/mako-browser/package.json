@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build:wasm": "wasm-pack build ../../crates/mako-wasm --target web --out-dir ../../packages/mako-browser/pkg --release",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --experimental-strip-types test/wording.test.ts"
   },
   "peerDependencies": {
     "react": ">=18"

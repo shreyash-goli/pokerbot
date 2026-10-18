@@ -75,6 +75,7 @@ const check = (cond, msg) => cond || fail(msg);
 
 // Small seeded RNG for the scripted clicker.
 let rs = 12345;
+const allLogLines = [];
 const rand = () => ((rs = (Math.imul(rs, 1103515245) + 12345) >>> 0) / 4294967296);
 
 function watch(page, label, allowed = null) {
@@ -110,6 +111,17 @@ async function settled(page, previousHtml) {
   return status;
 }
 
+// CLI wording: "You call 1", "Mako bets 2 (to 4, half pot)", "You raise to 6 (pot)".
+const LOG_LINE =
+  /^(You|Mako) (folds?|checks?|calls? \d+|bets? \d+( \((to \d+, )?(half pot|pot|all-in)\))?|raises? to \d+ \((half pot|pot|all-in)\))$/;
+async function checkLog(page, label) {
+  const lines = await page.$$eval('[data-testid="log"] li', (ls) => ls.map((l) => l.textContent.trim()));
+  for (const l of lines) check(LOG_LINE.test(l), `${label}: unexpected log wording "${l}"`);
+  const pinned = await page.$eval('[data-testid="log"]', (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+  check(pinned, `${label}: log not scrolled to the latest entry`);
+  return lines;
+}
+
 const html = (page) => page.$eval(table, (t) => t.outerHTML);
 const botCardCodes = (page) =>
   page.$$eval('[data-testid="bot-cards"] [data-card]', (els) => els.map((e) => e.getAttribute('data-card')));
@@ -140,6 +152,7 @@ async function playHand(page, label, shotPrefix) {
     const pick = passive && rand() < 0.75 ? passive : buttons[Math.floor(rand() * buttons.length)];
     await page.click(`[data-testid="actions"] button[data-action="${pick}"]`);
     status = await settled(page, h);
+    allLogLines.push(...(await checkLog(page, label)));
   }
   const final = await html(page);
   const showdown = (await page.$('[data-testid="showdown"]')) !== null;
@@ -155,7 +168,10 @@ async function playHand(page, label, shotPrefix) {
     check(revealed.length === 0, `${label}: bot cards shown after a fold`);
   }
   check(/You win|Mako wins|Split pot/.test(await page.textContent('[data-testid="result"]')), `${label}: result text`);
-  if (shotPrefix && showdown) await page.screenshot({ path: `${shotPrefix}-showdown.png`, fullPage: true });
+  if (shotPrefix && showdown) {
+    await page.screenshot({ path: `${shotPrefix}-showdown.png`, fullPage: true });
+    await page.locator('[data-testid="log"]').screenshot({ path: `${shotPrefix}-log.png` });
+  }
   return { showdown, decisions: seen.length, final };
 }
 
@@ -227,7 +243,10 @@ try {
   check(overflow.wide.length === 0, `mobile elements past the right edge: ${overflow.wide.join(', ')}`);
   if (shots) await mob.screenshot({ path: join(shots, 'mobile-start.png'), fullPage: true });
   const m = await playHand(mob, 'mobile hand 1', null);
-  if (shots) await mob.screenshot({ path: join(shots, 'mobile-hand-over.png'), fullPage: true });
+  if (shots) {
+    await mob.screenshot({ path: join(shots, 'mobile-hand-over.png'), fullPage: true });
+    await mob.locator('[data-testid="log"]').screenshot({ path: join(shots, 'mobile-log.png') });
+  }
   console.log(
     `mobile 375x812: scrollWidth ${overflow.scrollWidth} <= ${overflow.innerWidth}; played 1 hand (${m.showdown ? 'showdown' : 'fold'})`,
   );
@@ -266,6 +285,8 @@ try {
   server.close();
 }
 
+const betLines = [...new Set(allLogLines.filter((l) => /bet|raise/.test(l)))];
+console.log(`log wording: ${allLogLines.length} lines checked; e.g. ${betLines.slice(0, 4).map((l) => `"${l}"`).join(', ')}`);
 if (shots) console.log(`screenshots: ${shots}`);
 if (failures) {
   console.error(`BROWSER SMOKE FAILED: ${failures} check(s)`);
