@@ -137,6 +137,20 @@ check(code(() => new MakoSession(20, 1n, undefined, "cfr")) === "policy_missing"
 check(code(() => new MakoSession(20, 1n, new Uint8Array([1, 2, 3]), "cfr")) === "policy_invalid", "garbage policy");
 check(code(() => new MakoSession(30, 1n, undefined, "baseline")) === "invalid_depth", "bad depth");
 check(code(() => new MakoSession(20, 1n, undefined, "gto")) === "invalid_bot", "bad bot");
+// Seeds: BigInt in 0..2^64 only; no modular wrap.
+for (const bad of [-1n, 1n << 64n, 7, "7", undefined, null]) {
+  check(code(() => new MakoSession(20, bad, undefined, "baseline")) === "invalid_seed", `seed ${String(bad)} rejected`);
+}
+check(code(() => new MakoSession(20, (1n << 64n) - 1n, undefined, "baseline")) === null, "u64::MAX seed accepted");
+{
+  const s = new MakoSession(20, 1n, undefined, "baseline");
+  const before = s.snapshot();
+  check(code(() => s.reset(-5n)) === "invalid_seed", "reset with negative seed rejected");
+  check(s.snapshot() === before, "rejected reset changed state");
+  let msg = "";
+  try { s.step("y".repeat(5000)); } catch (e) { msg = e.message; }
+  check(msg.startsWith("unknown_action") && msg.length < 200, "unknown_action echo truncated");
+}
 
 // Native parity digest (baseline: needs no artifact).
 const digest = checkCallDigest(new MakoSession(20, 7n, undefined, "baseline"), HANDS);

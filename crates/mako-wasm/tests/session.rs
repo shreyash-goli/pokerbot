@@ -179,6 +179,25 @@ fn invalid_actions_are_rejected_without_mutation() {
 }
 
 #[test]
+fn unknown_action_echo_is_truncated() {
+    let mut s = GameSession::new(20, 7, None, "baseline").unwrap();
+    let long = "x".repeat(10_000);
+    let msg = s.step(&long).unwrap_err().to_string();
+    assert!(msg.starts_with("unknown_action: "));
+    assert!(msg.len() < 200, "{} bytes", msg.len());
+    assert!(msg.contains(&format!("{}…", "x".repeat(64))));
+    assert!(!msg.contains(&"x".repeat(65)));
+    let wide = "♠".repeat(100); // multi-byte: cut on a char boundary
+    assert!(
+        s.step(&wide)
+            .unwrap_err()
+            .to_string()
+            .contains(&format!("{}…", "♠".repeat(64)))
+    );
+    assert_eq!(mako_wasm::session::echo_input("fold!"), "fold!");
+}
+
+#[test]
 fn bad_construction_is_an_explicit_error() {
     assert_eq!(code(GameSession::new(20, 1, None, "cfr")), "policy_missing");
     for bad in [&b""[..], b"MAKOSTRT", b"definitely not an artifact"] {

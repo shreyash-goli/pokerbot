@@ -76,6 +76,21 @@ pub fn parse_action(s: &str) -> Option<ActionKind> {
     ActionKind::ALL.into_iter().find(|&k| action_name(k) == s)
 }
 
+/// Longest caller input echoed back in an error, in characters.
+pub const MAX_ECHO_CHARS: usize = 64;
+
+/// `s` cut to [`MAX_ECHO_CHARS`] characters (with `…` if cut), so errors
+/// never echo arbitrarily large input.
+pub fn echo_input(s: &str) -> String {
+    let mut it = s.chars();
+    let head: String = it.by_ref().take(MAX_ECHO_CHARS).collect();
+    if it.next().is_some() {
+        head + "…"
+    } else {
+        head
+    }
+}
+
 /// Depth in big blinds → [`StackDepth`]; only 20, 50 and 100 exist.
 pub fn parse_depth(bb: u32) -> Result<StackDepth, SessionError> {
     StackDepth::ALL
@@ -99,7 +114,10 @@ pub enum SessionError {
     PolicyRulesMismatch(String),
     /// The artifact is corrupt, truncated, or otherwise invalid.
     PolicyInvalid(String),
-    /// Not one of the six wire action names.
+    /// A seed that is not a `BigInt` in `0..2^64` (JS API only).
+    InvalidSeed(String),
+    /// Not one of the six wire action names (echo truncated, see
+    /// [`echo_input`]).
     UnknownAction(String),
     /// A known action that is not legal now; `legal` lists what is.
     IllegalAction {
@@ -129,6 +147,7 @@ impl SessionError {
             SessionError::PolicyMissing => "policy_missing",
             SessionError::PolicyRulesMismatch(_) => "policy_rules_mismatch",
             SessionError::PolicyInvalid(_) => "policy_invalid",
+            SessionError::InvalidSeed(_) => "invalid_seed",
             SessionError::UnknownAction(_) => "unknown_action",
             SessionError::IllegalAction { .. } => "illegal_action",
             SessionError::HandOver => "hand_over",
@@ -163,6 +182,10 @@ impl fmt::Display for SessionError {
                 write!(f, "policy artifact is for other rules: {e}")
             }
             SessionError::PolicyInvalid(e) => write!(f, "policy artifact rejected: {e}"),
+            SessionError::InvalidSeed(s) => write!(
+                f,
+                "seed must be a BigInt in 0..2^64 (e.g. 7n or BigInt(7)); got {s}"
+            ),
             SessionError::UnknownAction(s) => write!(
                 f,
                 "{s:?} is not an action (use fold, check, call, half_pot, pot, all_in)"
@@ -359,7 +382,7 @@ impl GameSession {
             return Err(SessionError::NotYourTurn);
         }
         let kind =
-            parse_action(action).ok_or_else(|| SessionError::UnknownAction(action.to_string()))?;
+            parse_action(action).ok_or_else(|| SessionError::UnknownAction(echo_input(action)))?;
         let obs = self.hand.observation(HUMAN);
         let legal = obs
             .legal_actions

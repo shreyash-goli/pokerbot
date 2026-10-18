@@ -3,7 +3,9 @@
 //! Every method returns JSON text (parse it with `JSON.parse`) or throws a
 //! JS `Error` whose message starts with a stable code, e.g.
 //! `"illegal_action: pot is not legal now; legal: fold, call, all_in"`.
-//! Seeds are `u64`, i.e. JavaScript `BigInt` (`7n`, `BigInt(7)`).
+//! Seeds are JavaScript `BigInt`s in `0..2^64` (`7n`, `BigInt(7)`).
+//! Anything else (a `Number`, a negative or too-large `BigInt`) throws
+//! `invalid_seed` instead of wrapping.
 
 use wasm_bindgen::prelude::*;
 
@@ -11,6 +13,22 @@ use crate::session::{GameSession, SessionError};
 
 fn js_err(e: SessionError) -> JsError {
     JsError::new(&e.to_string())
+}
+
+/// Exact `u64` from a JS `BigInt`; rejects other types and out-of-range
+/// values (no modular wrap).
+fn seed_from_js(v: JsValue) -> Result<u64, SessionError> {
+    if !v.is_bigint() {
+        let what = match v.as_f64() {
+            Some(_) => "a Number (use a BigInt, e.g. 7n)",
+            None if v.is_undefined() => "undefined",
+            None if v.is_null() => "null",
+            None if v.is_string() => "a string",
+            None => "a non-BigInt value",
+        };
+        return Err(SessionError::InvalidSeed(what.to_string()));
+    }
+    u64::try_from(v).map_err(|_| SessionError::InvalidSeed("a BigInt outside 0..2^64".into()))
 }
 
 /// A human-vs-bot session running entirely in the browser.
@@ -28,10 +46,11 @@ impl MakoSession {
     #[wasm_bindgen(constructor)]
     pub fn new(
         depth_bb: u32,
-        seed: u64,
+        #[wasm_bindgen(unchecked_param_type = "bigint")] seed: JsValue,
         policy_bytes: Option<Vec<u8>>,
         bot: &str,
     ) -> Result<MakoSession, JsError> {
+        let seed = seed_from_js(seed).map_err(js_err)?;
         GameSession::new(depth_bb, seed, policy_bytes, bot)
             .map(|inner| MakoSession { inner })
             .map_err(js_err)
@@ -58,7 +77,11 @@ impl MakoSession {
     }
 
     /// Restarts the session with a new seed (score and bot RNG reset).
-    pub fn reset(&mut self, seed: u64) -> Result<String, JsError> {
+    pub fn reset(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "bigint")] seed: JsValue,
+    ) -> Result<String, JsError> {
+        let seed = seed_from_js(seed).map_err(js_err)?;
         self.inner.reset(seed).map_err(js_err)?;
         Ok(self.inner.snapshot_json())
     }

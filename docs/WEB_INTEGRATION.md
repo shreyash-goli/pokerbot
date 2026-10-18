@@ -1,4 +1,4 @@
-# Browser/website integration contract (M-22, implemented)
+# Browser/website integration contract (M-22 bridge, M-23 browser client)
 
 `crates/mako-wasm` compiles the native engine (`mako-core`) and the policy
 reader and inference code (`mako-cfr::infer`) to WebAssembly with
@@ -8,8 +8,15 @@ key or network access is needed at runtime, and no training runs in the
 browser: the page loads a `.mako` artifact that was trained offline and
 samples from it.
 
-The React demo and the Web Worker wrapper are M-23
-(`examples/react-demo`, `packages/mako-browser`).
+Layers:
+
+- `crates/mako-wasm` (M-22): the wasm-bindgen `MakoSession` class, which
+  returns JSON.
+- `packages/mako-browser` (M-23): typed DTOs, the async `MakoClient` that
+  runs the engine in a Web Worker, and the reusable `<MakoTable />` React
+  component.
+- `examples/react-demo` (M-23): a Vite + React demo that plays the 20BB
+  smoke policy.
 
 ## Build
 
@@ -22,7 +29,9 @@ node crates/mako-wasm/smoke/smoke.mjs target/wasm-node artifacts/smoke_20bb.mako
 ```
 
 Measured at M-22, release build, wasm-opt as run by wasm-pack 0.15.1:
-`mako_wasm_bg.wasm` is 142,210 bytes (62,880 gzipped). The 20BB smoke
+`mako_wasm_bg.wasm` is 142,210 bytes (62,880 gzipped) for `--target
+bundler`. The `--target web` build used by `mako-browser` is 144,718 bytes
+(about 65 KB gzipped). The 20BB smoke
 artifact is about 890 KB and is fetched separately. The wasm module imports
 only the wasm-bindgen glue (`throw`, `Error`, externref table). It uses no
 threads, filesystem or clock.
@@ -48,9 +57,21 @@ export type MakoAction = 'fold' | 'check' | 'call' | 'half_pot' | 'pot' | 'all_i
 - Every method returns JSON text. Call `JSON.parse` on it. Serde is not
   used; the JSON is written by hand in `src/json.rs` and checked by a strict
   parser in the tests.
-- **Seeds are `u64`, passed as JS `BigInt`** (`7n`, `BigInt(7)`), so every
-  native seed, including those above 2^53, works unchanged. In JSON the seed
-  is a decimal string, and checksums are `"0x…"` hex strings.
+- **Seeds are JS `BigInt`s in `0..2^64`** (`7n`, `BigInt(7)`), so every
+  native `u64` seed, including those above 2^53, works unchanged. Anything
+  else throws `invalid_seed` and is never wrapped modulo 2^64: a negative or
+  too-large BigInt, a `Number`, a string, `null` or `undefined`.
+  - **Number vs BigInt:** in the original M-22 build the seed parameter was
+    a plain wasm-bindgen `u64`, so passing a `Number` (`new MakoSession(20, 7,
+    ...)`) threw a bare `TypeError` ("Cannot convert 7 to a BigInt"), and a
+    negative BigInt silently wrapped. Since M-23 the seed is validated
+    explicitly and both cases throw `invalid_seed: ...`. The TypeScript
+    signature still says `bigint`.
+  - `MakoClient` (in `mako-browser`) also accepts a non-negative safe-integer
+    `Number` and converts it with `BigInt(n)`. Unsafe, fractional and
+    negative Numbers are rejected before reaching wasm.
+  - In JSON the seed is a decimal string, and checksums are `"0x…"` hex
+    strings.
 - `bot: 'cfr'` needs valid artifact bytes for the chosen depth. Missing or
   invalid bytes throw. **There is never a silent fallback to the
   baseline.** With `'baseline'` the bytes are ignored, and the
@@ -75,7 +96,8 @@ a colon, e.g. `"illegal_action: pot is not legal now; legal: fold, call, all_in"
 | `policy_missing` | `cfr` without bytes |
 | `policy_invalid` | corrupt, truncated or incompatible artifact |
 | `policy_rules_mismatch` | artifact trained for another depth/blinds |
-| `unknown_action` | not one of the six exact lowercase names |
+| `invalid_seed` | seed not a BigInt in `0..2^64` |
+| `unknown_action` | not one of the six exact lowercase names (input echoed, truncated to 64 characters) |
 | `illegal_action` | a known action that is not legal now |
 | `hand_over` | `step` after the hand ended (call `nextHand`) |
 | `hand_in_progress` | `nextHand` mid-hand |
@@ -186,3 +208,157 @@ CLI crate. `tests/parity.rs` checks the following:
   inference paths it calls.
 - Show `bot.label`, `bot.disclaimer` and `note` to players. The CFR bot is
   not GTO. The smoke policy is weak.
+
+## Browser client and React component (M-23)
+
+### `packages/mako-browser`
+
+This package is consumed as TypeScript source; its `exports` point at
+`src/`. The wasm glue lives in `packages/mako-browser/pkg/` (gitignored) and
+is built with `npm run build:wasm`, which runs `wasm-pack --target web`. The
+web target loads the `.wasm` file through `new URL(..., import.meta.url)`,
+which Vite, webpack 5 and Next.js understand without a wasm plugin. Bundler
+`asyncWebAssembly` / `vite-plugin-wasm` are not needed.
+
+```typescript
+import { createMakoClient, MakoTable, type PublicState } from 'mako-browser';
+
+const client = createMakoClient();            // { worker: false } to force main thread
+let s: PublicState = await client.start({ depthBB: 20, seed: 7n, policyUrl: '/policy/smoke_20bb.mako' });
+s = await client.step('call');                // engine validates; MakoError with .code on failure
+s = await client.nextHand();
+const h = await client.history();             // HistoryDTO
+client.dispose();
+```
+
+- `client.mode` is `'worker'` or `'main-thread'`.
+  - The engine runs in a module Web Worker (`src/worker.ts`) by default, so
+    policy loading and inference never block rendering.
+  - If `Worker` is missing, cannot be constructed, or fails to load during
+    `start`, the same engine runs on the main thread. Requests are processed
+    strictly in order either way.
+- The policy is fetched on the main thread (`policyUrl`) or passed as bytes
+  (`policy`), then transferred to the worker. A failed fetch throws
+  `policy_fetch_failed`. Client-side codes are `policy_fetch_failed`,
+  `client_disposed`, `not_started` and `worker_failed`; all other codes are
+  the engine's.
+- The wasm module is loaded with a dynamic `import()` the first time a
+  session starts, so it is a separate chunk and never part of the initial
+  bundle.
+
+`<MakoTable />` props:
+
+| prop | type | default |
+|---|---|---|
+| `policyUrl` / `policy` | `string` / `Uint8Array` | needed for `bot="cfr"` |
+| `depthBB` | `20 \| 50 \| 100` | `20` (must match the policy) |
+| `seed` | `bigint \| number` | random per mount |
+| `bot` | `'cfr' \| 'baseline'` | `'cfr'` |
+| `theme` | `'sepia' \| 'terminal' \| Partial<MakoTheme>` | `'sepia'` |
+| `worker` | `boolean` | `true` |
+| `onState` | `(s: PublicState) => void` | none |
+| `className`, `style` | | |
+
+- The component renders only the `PublicState` JSON: board, pot, stacks,
+  the human's cards, face-down bot cards until `botCards` arrives at
+  showdown, legal-action buttons with their chip amounts (`chipsToCommit`,
+  `raiseTo`), the hand log by street, the result, showdown hands, next hand,
+  session score, the bot's label and checksum, the "not GTO" disclaimer, and
+  the client-side note. It contains no poker rules.
+- Styles are scoped under `.mako-table` and driven by `--mako-*` CSS
+  variables. The cream/sepia palette matches the terminal theme. The layout
+  is a single column below 560 px, with 44 px tap targets.
+- If the CFR policy cannot be loaded, the component shows the error and a
+  "Play the untrained baseline" button. **It never switches to the baseline
+  by itself.**
+
+### `examples/react-demo`
+
+```sh
+# from the repository root, once
+scripts/train_smoke.sh                 # trains artifacts/smoke_20bb.mako (~2 min, gitignored)
+cd examples/react-demo
+npm ci
+npm run build    # wasm-pack (--target web) -> copy policy -> tsc --noEmit -> vite build
+npm run smoke    # local headless Chrome smoke (below)
+npm run preview  # http://127.0.0.1:4173
+```
+
+- `scripts/copy-policy.mjs` copies `artifacts/smoke_20bb.mako` to
+  `public/policy/` at build time. The file is never committed (`*.mako` is
+  gitignored). If it is missing, the build still succeeds with a warning,
+  and the page shows the explicit error screen.
+- `?seed=N` in the URL fixes the session seed.
+- Dependencies are pinned in `package-lock.json`. Runtime: `react`,
+  `react-dom` (MIT). Dev: `vite` (MIT; pulls in rolldown/oxc MIT, postcss
+  MIT, lightningcss MPL-2.0 at build time only), `typescript` 7 (Apache-2.0),
+  `@types/react{,-dom}` (MIT), and `playwright-core` (Apache-2.0; no browser
+  download). No `@vitejs/plugin-react`: Vite 8 compiles TSX with oxc, so
+  only fast refresh is lost.
+- Measured build: the app JS is 239 KB (75 KB gzipped), React included. The
+  wasm glue chunk is 6 KB, the worker 1 KB, and the `.wasm` 145 KB (65 KB
+  gzipped). The smoke policy (891 KB) is fetched separately when a session
+  starts.
+
+### Browser smoke (`examples/react-demo/scripts/smoke.mjs`)
+
+The script serves `dist/` on `127.0.0.1` with `application/wasm`. It drives
+the locally installed Google Chrome headless through `playwright-core`
+(`channel: 'chrome'`; nothing is downloaded) and fails with a nonzero exit
+if any check fails:
+
+- At least 3 hands are played by clicking the rendered legal-action
+  buttons, including at least one showdown.
+- No bot card appears in the DOM (data attributes, aria labels or rendered
+  glyphs) before a showdown. None appears after a fold. The cards revealed
+  at showdown never appeared earlier in that hand.
+- The engine runs in a Web Worker. There are no page or console errors.
+- A 375×812 mobile viewport has no horizontal overflow and plays a hand.
+- A missing policy shows `policy_fetch_failed`, and the baseline plays only
+  after the user clicks it.
+- With `Worker` deleted, the engine falls back to the main thread and plays
+  a hand.
+
+Use `--shots <dir>` for screenshots and `--hands N` for more hands.
+
+### Next.js (App Router) embedding
+
+1. Copy or link `packages/mako-browser` into the site, or depend on it with
+   `"mako-browser": "file:..."`. Build its `pkg/` with `npm run build:wasm`,
+   then add the package to `transpilePackages`, because it ships TypeScript
+   source:
+   ```js
+   // next.config.mjs
+   export default { transpilePackages: ['mako-browser'] };
+   ```
+2. Put the policy at `public/mako/smoke_20bb.mako` so it is served from
+   `/mako/smoke_20bb.mako`, or set `policyUrl` to any same-origin path. Do
+   not import it as a module.
+3. Render the table only on the client, so wasm and Worker setup never run
+   during SSR:
+   ```tsx
+   // app/poker/MakoEmbed.tsx
+   'use client';
+   import dynamic from 'next/dynamic';
+   const MakoTable = dynamic(() => import('mako-browser').then((m) => m.MakoTable), {
+     ssr: false,
+     loading: () => <p>Loading Mako…</p>,
+   });
+   export default function MakoEmbed() {
+     return <MakoTable policyUrl="/mako/smoke_20bb.mako" depthBB={20} theme="sepia" />;
+   }
+   ```
+   Then use `<MakoEmbed />` from a server `page.tsx`.
+4. Next.js serves its own emitted `.wasm` assets with `application/wasm`.
+   If you host `dist/` or `.wasm` files elsewhere (nginx, S3, a CDN), make
+   sure `.wasm` is served as `application/wasm` and `.mako` as
+   `application/octet-stream`. Streaming instantiation needs the correct
+   type. The glue falls back to a slower path with a console warning
+   otherwise.
+5. Bundle cost: about 7 KB of JS glue plus a 145 KB (65 KB gzipped) `.wasm`,
+   loaded only when the table mounts, plus the policy file. React is shared
+   with the site. Nothing calls a server or needs an API key. Training code
+   is never shipped.
+6. Keep the bot label, disclaimer and client-side note visible. The policy
+   is a weak smoke policy and is not GTO, and browser play is for
+   entertainment only.
