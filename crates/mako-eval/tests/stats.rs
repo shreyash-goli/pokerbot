@@ -66,6 +66,10 @@ fn matchup_report_scales_pairs_to_hands() {
         counts_b: DecisionCounts::default(),
         infer_a: None,
         infer_b: None,
+        adapt_a: None,
+        adapt_b: None,
+        delivered_a: 0,
+        delivered_b: 0,
         showdowns: 0,
     };
     let r = summarize_match("x", &m, None);

@@ -427,3 +427,170 @@ fn opponent_adaptation_never_reads_human_hole_cards() {
     assert_eq!(sa, sb);
     assert!(sa.adapted > 0);
 }
+
+// ------------------------------------------------ hand-strength-aware rules
+
+use mako_analysis::opponent::{BLUFF_EQUITY, VALUE_EQUITY, hand_strength};
+use mako_core::card::parse_cards;
+
+/// Profile with `n` copies of "human limps, calls a flop bet, checks down".
+fn station_profile(n: usize) -> OpponentProfile {
+    let mut p = OpponentProfile::new();
+    for _ in 0..n {
+        let st = hand(
+            Seat::Zero,
+            "Ah Ad",
+            "7c 2d",
+            DRY,
+            &[Call, Check, HalfPot, Call, Check, Check, Check, Check],
+        );
+        p.observe_events(HUMAN, &bot_view(&st)).unwrap();
+    }
+    p
+}
+
+/// The bot's (BB, first to act) flop observation with `bot` cards on `flop`.
+fn bot_flop_obs(bot: &str, flop: &str) -> mako_core::observation::PlayerObservation {
+    let board = format!("{flop} 4s 3c");
+    let st = hand(Seat::Zero, "Th 9h", bot, &board, &[Call, Check]);
+    assert_eq!(st.to_act(), Some(BOT));
+    st.observation(BOT)
+}
+
+fn mass(d: &[f64; 6], ks: &[ActionKind]) -> f64 {
+    ks.iter().map(|k| d[k.index()]).sum()
+}
+
+const BETS: [ActionKind; 3] = [ActionKind::HalfPot, ActionKind::Pot, ActionKind::AllIn];
+
+#[test]
+fn opponent_hand_strength_is_own_cards_only_and_deterministic() {
+    let c = |s: &str| {
+        let v = parse_cards(s).unwrap();
+        [v[0], v[1]]
+    };
+    let aa = hand_strength(c("Ah Ad"), &[]).unwrap();
+    assert!((0.78..0.92).contains(&aa), "AA preflop {aa}");
+    assert_eq!(Some(aa), hand_strength(c("Ah Ad"), &[]));
+    let board = parse_cards("Ac Kc 2h").unwrap();
+    assert!(hand_strength(c("As Ah"), &board).unwrap() >= VALUE_EQUITY);
+    let weak_board = parse_cards("Ks Qs Jh").unwrap();
+    assert!(hand_strength(c("7c 2d"), &weak_board).unwrap() <= BLUFF_EQUITY);
+    assert!(hand_strength(c("Ah Ad"), &parse_cards("Ah 2c 3d").unwrap()).is_none());
+    assert!(hand_strength(c("Ah Ad"), &board[..2]).is_none());
+}
+
+#[test]
+fn opponent_station_value_bets_strong_and_bluffs_less_weak() {
+    let profile = station_profile(30);
+    let cfg = enabled_cfg(1);
+    // Strong: top set -> check mass moves to the pot-sized bet.
+    let obs = bot_flop_obs("As Ah", "Ac Kc 2h");
+    let base = BaselineAgent::strategy(&obs).unwrap();
+    let adj = adjust(&base, &obs, &profile, &cfg).expect("strong hand vs station adapts");
+    assert!(adj.distribution[ActionKind::Check.index()] < base[ActionKind::Check.index()]);
+    assert!(adj.distribution[ActionKind::Pot.index()] > base[ActionKind::Pot.index()]);
+    assert!(adj.moved <= cfg.max_shift + 1e-12);
+    assert!(adj.rule.contains("value"), "{}", adj.rule);
+    // Weak: 7-2 on K-Q-J -> bets move to check.
+    let obs = bot_flop_obs("7c 2d", "Ks Qs Jh");
+    let base = BaselineAgent::strategy(&obs).unwrap();
+    let adj = adjust(&base, &obs, &profile, &cfg).expect("weak hand vs station adapts");
+    assert!(mass(&adj.distribution, &BETS) < mass(&base, &BETS));
+    assert!(adj.distribution[ActionKind::Check.index()] > base[ActionKind::Check.index()]);
+    assert!(adj.rule.contains("fewer bluffs"), "{}", adj.rule);
+    let sum: f64 = adj.distribution.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-9);
+    // Medium strength: no change at all.
+    let mid = ["9c 8d", "Qd 6c", "Kd 5h", "Jc Td", "8s 7s", "Ad 5c"]
+        .into_iter()
+        .find(|h| {
+            let o = bot_flop_obs(h, "Ks 7h 2c");
+            let e = hand_strength(o.hole_cards, &o.board).unwrap();
+            e > BLUFF_EQUITY && e < VALUE_EQUITY
+        })
+        .expect("a medium-strength candidate");
+    let obs = bot_flop_obs(mid, "Ks 7h 2c");
+    assert_eq!(
+        adjust(
+            &BaselineAgent::strategy(&obs).unwrap(),
+            &obs,
+            &profile,
+            &cfg
+        ),
+        None
+    );
+}
+
+#[test]
+fn opponent_folder_rule_skips_strong_hands() {
+    let profile = folder_profile(30);
+    let cfg = enabled_cfg(1);
+    let strong = bot_flop_obs("As Ah", "Ac Kc 2h");
+    assert_eq!(
+        adjust(
+            &BaselineAgent::strategy(&strong).unwrap(),
+            &strong,
+            &profile,
+            &cfg
+        ),
+        None
+    );
+    let weak = bot_flop_obs("7c 2d", "Ks Qs Jh");
+    let base = BaselineAgent::strategy(&weak).unwrap();
+    let adj = adjust(&base, &weak, &profile, &cfg).expect("weak hand vs folder adapts");
+    assert!(adj.distribution[ActionKind::HalfPot.index()] > base[ActionKind::HalfPot.index()]);
+    assert!(adj.moved <= cfg.max_shift + 1e-12);
+}
+
+#[test]
+fn opponent_station_adaptation_never_reads_human_hole_cards() {
+    let run = |swap: bool| {
+        let mut ad =
+            AdaptiveAgent::new(Box::new(BaselineAgent::new(3)), HUMAN, enabled_cfg(3)).unwrap();
+        for _ in 0..30 {
+            let st = hand(
+                Seat::Zero,
+                "Ah Ad",
+                "7c 2d",
+                DRY,
+                &[Call, Check, HalfPot, Call, Check, Check, Check, Check],
+            );
+            ad.observe_hand(&bot_view(&st)).unwrap();
+        }
+        let mut decks = MakoRng::seed_from_u64(61);
+        let mut human = MakoRng::seed_from_u64(62);
+        let mut out = Vec::new();
+        for h in 0..120u64 {
+            let button = Seat::ALL[(h % 2) as usize];
+            let mut order = Deck::shuffled(&mut decks).order().to_vec();
+            if swap {
+                let pos = if HUMAN == button { [1, 3] } else { [0, 2] };
+                order.swap(pos[0], 46);
+                order.swap(pos[1], 47);
+            }
+            let mut st = state_from_order(button, &order);
+            while let Some(a) = st.to_act() {
+                let obs = st.observation(a);
+                let act = if a == BOT {
+                    let d = ad.act(&obs).unwrap();
+                    out.push(d);
+                    *obs.legal_actions
+                        .iter()
+                        .find(|l| l.kind == d.action)
+                        .unwrap()
+                } else {
+                    obs.legal_actions[human.gen_range(obs.legal_actions.len() as u64) as usize]
+                };
+                st.apply_legal(&act).unwrap();
+            }
+            ad.observe_hand(&bot_view(&st)).unwrap();
+        }
+        (out, ad.adapt_stats())
+    };
+    let (a, sa) = run(false);
+    let (b, sb) = run(true);
+    assert_eq!(a, b);
+    assert_eq!(sa, sb);
+    assert!(sa.adapted > 0, "the station rule fired");
+}

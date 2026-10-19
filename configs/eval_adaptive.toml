@@ -1,0 +1,46 @@
+# Mako fixed-vs-adaptive CFR comparison (M-20 comparator).
+#
+# LOCKED before the first run: artifact checksum, seeds, sample size,
+# matchups and adaptation settings are fixed here and must not be tuned after
+# looking at results. Change them only in a reviewed commit, and say why.
+#
+# This is a COMPARISON, not a promotion: there is no [gate] and no verdict.
+# Adaptive mode is experimental; this comparison does not establish general
+# strength. No exploitability, Nash or GTO measurement is made.
+# See docs/EVALUATION.md ("Fixed vs adaptive comparison").
+
+[policy]
+artifact = "artifacts/smoke_20bb.mako"
+expected_checksum = "0xe673b32895f96760"
+agent_seed = 1
+
+[rules]
+depth_bb = 20
+small_blind = 1
+big_blind = 2
+
+[eval]
+mode = "comparison"
+# Both candidates play every opponent on the SAME deal stream, so the
+# per-deal difference fixed - adaptive is a paired sample.
+candidates = ["cfr", "adaptive_cfr"]
+# "cfr" = fixed CFR opponent (adaptive vs fixed head-to-head; skipped for the
+# fixed candidate, where it would duplicate the mirror).
+opponents = ["random", "checkcall", "tight", "cfr", "mirror"]
+# Differs from the training seed (20261115), the abstraction seed
+# (1296126799) and the smoke eval seed (4157113009).
+base_seed = 2_718_281_829
+deal_pairs = 20_000             # 40,000 hands per matchup
+sanity_random_vs_checkcall = true
+bootstrap_resamples = 2_000
+bootstrap_seed = 9_002
+max_actions_per_hand = 512
+
+[adaptive]
+# AdaptConfig defaults, written out explicitly.
+enabled = true
+min_samples = 20
+max_shift_bp = 1_000            # at most 10% of probability moved per decision
+fold_threshold_bp = 6_000       # over-folder rule: fold-to-aggression >= 60%
+station_threshold_bp = 6_000    # calling-station rule: call-vs-aggression >= 60%
+seed = 0

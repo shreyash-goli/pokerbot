@@ -3,7 +3,8 @@
 
 use std::fmt::Write as _;
 
-use crate::evaluate::EvalReport;
+use crate::config::Mode;
+use crate::evaluate::{COMPARISON_DISCLAIMER, Comparison, EvalReport};
 use crate::gate::{ChecksumStatus, DISCLAIMER};
 use crate::report::MatchupReport;
 use crate::stats::Summary;
@@ -59,6 +60,38 @@ fn matchup_text(out: &mut String, m: &MatchupReport) {
             );
         }
     }
+    for (side, ad, n) in [
+        ("A", m.adapt_a, m.delivered_a),
+        ("B", m.adapt_b, m.delivered_b),
+    ] {
+        if let Some(a) = ad {
+            let avg = if a.adapted > 0 {
+                format!("{:.4}", a.mass_moved / a.adapted as f64)
+            } else {
+                "n/a".into()
+            };
+            let _ = writeln!(
+                out,
+                "    {side} adaptation        {} of {} decisions shifted ({}); avg mass moved {avg}; {n} hands observed",
+                a.adapted,
+                a.decisions,
+                pct(a.adapted, a.decisions)
+            );
+        }
+    }
+}
+
+fn comparison_text(out: &mut String, c: &Comparison) {
+    let _ = writeln!(
+        out,
+        "  vs {:<10} fixed − adaptive BB/100 {}  ({} paired deals)",
+        c.opponent_id,
+        ci(&c.fixed_minus_adaptive_bb100),
+        c.pairs
+    );
+    if let Some((l, h)) = c.bootstrap {
+        let _ = writeln!(out, "               bootstrap 95% CI [{l:+.2}, {h:+.2}]");
+    }
 }
 
 /// Human-readable report.
@@ -102,15 +135,37 @@ pub fn render_text(r: &EvalReport) -> String {
         pct(c.fallbacks, c.decisions),
         c.decisions
     );
-    let _ = writeln!(out, "\npromotion gate: {}", r.gate.verdict.as_str());
-    for ch in &r.gate.checks {
+    if !r.comparisons.is_empty() {
         let _ = writeln!(
             out,
-            "  [{}] {}: {}",
-            if ch.passed { "pass" } else { "FAIL" },
-            ch.name,
-            ch.detail
+            "\nfixed vs adaptive (same deals; positive = fixed did better):"
         );
+        for c in &r.comparisons {
+            comparison_text(&mut out, c);
+        }
+    }
+    match &r.gate {
+        Some(g) => {
+            let _ = writeln!(out, "\npromotion gate: {}", g.verdict.as_str());
+            for ch in &g.checks {
+                let _ = writeln!(
+                    out,
+                    "  [{}] {}: {}",
+                    if ch.passed { "pass" } else { "FAIL" },
+                    ch.name,
+                    ch.detail
+                );
+            }
+        }
+        None => {
+            let _ = writeln!(
+                out,
+                "\ncomparison mode: this is a COMPARISON, not a promotion; no verdict is given."
+            );
+        }
+    }
+    if r.mode == Mode::Comparison {
+        let _ = writeln!(out, "\n{COMPARISON_DISCLAIMER}");
     }
     let _ = writeln!(out, "\n{DISCLAIMER}");
     out
@@ -165,16 +220,27 @@ fn jmatchup(m: &MatchupReport) -> String {
         ),
         None => "null".into(),
     };
+    let adapt = |a: Option<mako_analysis::opponent::AdaptStats>| match a {
+        Some(a) => format!(
+            "{{\"decisions\":{},\"adapted\":{},\"mass_moved\":{}}}",
+            a.decisions,
+            a.adapted,
+            jnum(a.mass_moved)
+        ),
+        None => "null".into(),
+    };
     let boot = match m.bootstrap_bb100 {
         Some((l, h)) => format!("[{},{}]", jnum(l), jnum(h)),
         None => "null".into(),
     };
     format!(
-        "{{\"opponent\":{},\"label_a\":{},\"label_b\":{},\"pairs\":{},\"hands\":{},\"showdowns\":{},\
+        "{{\"candidate\":{},\"opponent\":{},\"label_a\":{},\"label_b\":{},\"pairs\":{},\"hands\":{},\"showdowns\":{},\
 \"bb100\":{},\"bootstrap_ci95\":{},\"a_button_bb100\":{},\"a_big_blind_bb100\":{},\
 \"a_net_chips\":{},\"b_net_chips\":{},\
 \"a_decisions\":{},\"a_fallbacks\":{},\"b_decisions\":{},\"b_fallbacks\":{},\
-\"a_infer_stats\":{},\"b_infer_stats\":{}}}",
+\"a_infer_stats\":{},\"b_infer_stats\":{},\
+\"a_adapt_stats\":{},\"b_adapt_stats\":{},\"a_hands_observed\":{},\"b_hands_observed\":{}}}",
+        jstr(&m.candidate_id),
         jstr(&m.opponent_id),
         jstr(&m.label_a),
         jstr(&m.label_b),
@@ -192,7 +258,11 @@ fn jmatchup(m: &MatchupReport) -> String {
         m.counts_b.decisions,
         m.counts_b.fallbacks,
         infer(m.infer_a),
-        infer(m.infer_b)
+        infer(m.infer_b),
+        adapt(m.adapt_a),
+        adapt(m.adapt_b),
+        m.delivered_a,
+        m.delivered_b
     )
 }
 
@@ -205,20 +275,51 @@ pub fn render_json(r: &EvalReport) -> String {
         ChecksumStatus::NotPinned(_) => ("not_pinned", None),
     };
     let list = |v: &[MatchupReport]| v.iter().map(jmatchup).collect::<Vec<_>>().join(",");
-    let checks = r
-        .gate
-        .checks
+    let gate = match &r.gate {
+        Some(g) => {
+            let checks = g
+                .checks
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{{\"name\":{},\"passed\":{},\"detail\":{}}}",
+                        jstr(&c.name),
+                        c.passed,
+                        jstr(&c.detail)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{{\"verdict\":{},\"checks\":[{checks}]}}",
+                jstr(g.verdict.as_str())
+            )
+        }
+        None => "null".into(),
+    };
+    let comparisons = r
+        .comparisons
         .iter()
         .map(|c| {
             format!(
-                "{{\"name\":{},\"passed\":{},\"detail\":{}}}",
-                jstr(&c.name),
-                c.passed,
-                jstr(&c.detail)
+                "{{\"opponent\":{},\"pairs\":{},\"fixed_minus_adaptive_bb100\":{},\"bootstrap_ci95\":{}}}",
+                jstr(&c.opponent_id),
+                c.pairs,
+                jsummary(&c.fixed_minus_adaptive_bb100),
+                c.bootstrap
+                    .map_or("null".into(), |(l, h)| format!("[{},{}]", jnum(l), jnum(h)))
             )
         })
         .collect::<Vec<_>>()
         .join(",");
+    let mode = match r.mode {
+        Mode::Promotion => "promotion",
+        Mode::Comparison => "comparison",
+    };
+    let comparison_note = match r.mode {
+        Mode::Comparison => jstr(COMPARISON_DISCLAIMER),
+        Mode::Promotion => "null".into(),
+    };
     format!(
         "{{\"format\":\"mako-eval-report v1\",\
 \"artifact\":{{\"path\":{},\"bytes\":{},\"checksum\":{},\"checksum_status\":{},\"pinned_checksum\":{},\
@@ -228,7 +329,7 @@ pub fn render_json(r: &EvalReport) -> String {
 \"matchups\":[{}],\"sanity\":[{}],\
 \"candidate_decisions\":{},\"candidate_fallbacks\":{},\
 \"candidate_infer_stats\":{{\"decisions\":{},\"policy_hits\":{},\"fallbacks\":{}}},\
-\"gate\":{{\"verdict\":{},\"checks\":[{}]}},\
+\"mode\":{},\"gate\":{},\"comparisons\":[{}],\"comparison_note\":{},\
 \"disclaimer\":{}}}\n",
         jstr(&a.path),
         a.size_bytes,
@@ -255,8 +356,10 @@ pub fn render_json(r: &EvalReport) -> String {
         r.candidate_infer.decisions,
         r.candidate_infer.policy_hits,
         r.candidate_infer.fallbacks,
-        jstr(r.gate.verdict.as_str()),
-        checks,
+        jstr(mode),
+        gate,
+        comparisons,
+        comparison_note,
         jstr(DISCLAIMER)
     )
 }

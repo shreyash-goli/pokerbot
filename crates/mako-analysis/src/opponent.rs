@@ -34,15 +34,31 @@
 //!
 //! Applied only when [`AdaptConfig::enabled`], only on the agent's decision
 //! with nothing to call (`to_call == 0`) on street `s`, and only when the
-//! relevant statistic has at least [`AdaptConfig::min_samples`] samples:
+//! relevant statistic has at least [`AdaptConfig::min_samples`] samples.
+//! Both rules are **hand-strength aware**: `e` is the agent's own equity vs
+//! a uniformly random hand, estimated by [`hand_strength`] from the agent's
+//! **own hole cards and the visible board only** (never the opponent's
+//! cards). With rule strength `k = (x − t)/(1 − t)` for statistic `x` and
+//! threshold `t`, at most `max_shift · k` probability is moved:
 //!
-//! 1. **Over-folder** — if fold-to-aggression[s] `f ≥ fold_threshold`, move
-//!    `max_shift · (f − t)/(1 − t)` of probability (capped by the check
-//!    probability) from Check to the smallest legal bet (HalfPot, else Pot,
-//!    else AllIn).
-//! 2. **Calling station** — if call-vs-aggression[s] `c ≥ station_threshold`,
-//!    move up to `max_shift · (c − t)/(1 − t)` of probability from the
-//!    largest bets (AllIn, then Pot) to Check.
+//! 1. **Calling station** — call-vs-aggression[s] `c ≥ station_threshold`.
+//!    A player who calls too much pays off value bets and ignores bluffs, so:
+//!    * `e ≥` [`VALUE_EQUITY`]: move Check → the largest non-all-in legal bet
+//!      (Pot, else HalfPot, else AllIn) — **value-bet more**;
+//!    * `e ≤` [`BLUFF_EQUITY`]: move bets → Check, taking from AllIn, then
+//!      Pot, then HalfPot — **bluff less**;
+//!    * otherwise: no change.
+//!
+//!    (Revision: the first version moved large bets to Check regardless of
+//!    hand strength, which also removed value bets; a locked comparator run
+//!    measured it as significantly worse than the fixed policy against a
+//!    check-call opponent.)
+//! 2. **Over-folder** — fold-to-aggression[s] `f ≥ fold_threshold`. Bluffs
+//!    and thin bets gain against a player who folds too much, but betting a
+//!    strong hand mostly folds out hands that would pay later, so:
+//!    * `e <` [`VALUE_EQUITY`]: move Check → the smallest legal bet
+//!      (HalfPot, else Pot, else AllIn) — **bluff more**;
+//!    * `e ≥` [`VALUE_EQUITY`]: no change (keep the policy's own mix).
 //!
 //! At most `max_shift` probability mass is moved in total (`max_shift ≤`
 //! [`MAX_SHIFT_LIMIT`]); mass only moves between **legal** actions; the
@@ -54,6 +70,8 @@ use std::fmt;
 
 use mako_cfr::infer::{Agent, AgentError, Decision, InferStats};
 use mako_core::action::{ActionKind, ActionRecord, Seat, Street, TerminalReason};
+use mako_core::card::{Card, CardSet};
+use mako_core::eval::evaluate7;
 use mako_core::events::HandEvent;
 use mako_core::observation::PlayerObservation;
 use mako_core::rng::MakoRng;
@@ -63,6 +81,50 @@ use crate::stats::{fmt_num, fmt_pct};
 
 /// Hard upper bound on [`AdaptConfig::max_shift`].
 pub const MAX_SHIFT_LIMIT: f64 = 0.15;
+/// Own equity (vs a random hand) at or above which a hand counts as strong.
+pub const VALUE_EQUITY: f64 = 0.65;
+/// Own equity at or below which a hand counts as weak (a bluff candidate).
+pub const BLUFF_EQUITY: f64 = 0.40;
+/// Trials of [`hand_strength`]'s seeded Monte Carlo estimate.
+pub const STRENGTH_SAMPLES: u32 = 400;
+
+/// The agent's own equity vs a uniformly random opponent hand, from its own
+/// hole cards and the visible board only: a seeded Monte Carlo estimate
+/// ([`STRENGTH_SAMPLES`] trials; the seed comes from these cards, so the
+/// value is deterministic). `None` on invalid input.
+pub fn hand_strength(hole: [Card; 2], board: &[Card]) -> Option<f64> {
+    let mut known = hole.to_vec();
+    known.extend_from_slice(board);
+    if !matches!(board.len(), 0 | 3 | 4 | 5) || CardSet::try_from_cards(&known).is_err() {
+        return None;
+    }
+    let used: CardSet = known.iter().copied().collect();
+    let mut rest: Vec<Card> = Card::all().filter(|c| !used.contains(*c)).collect();
+    let mut seed: u64 = 0x6a09_e667_f3bc_c908;
+    for c in &known {
+        seed = (seed ^ (u64::from(c.index()) + 1)).wrapping_mul(0x0100_0000_01b3);
+    }
+    let mut rng = MakoRng::seed_from_u64(seed);
+    let need = 2 + 5 - board.len();
+    let mut points = 0u64;
+    for _ in 0..STRENGTH_SAMPLES {
+        for k in 0..need {
+            let j = k + rng.gen_range((rest.len() - k) as u64) as usize;
+            rest.swap(k, j);
+        }
+        let mut b = [rest[0]; 5];
+        b[..board.len()].copy_from_slice(board);
+        b[board.len()..].copy_from_slice(&rest[2..need]);
+        let me = evaluate7(&[hole[0], hole[1], b[0], b[1], b[2], b[3], b[4]]);
+        let opp = evaluate7(&[rest[0], rest[1], b[0], b[1], b[2], b[3], b[4]]);
+        points += match me.cmp(&opp) {
+            std::cmp::Ordering::Greater => 2,
+            std::cmp::Ordering::Equal => 1,
+            std::cmp::Ordering::Less => 0,
+        };
+    }
+    Some(points as f64 / (2.0 * f64::from(STRENGTH_SAMPLES)))
+}
 
 const STREETS: [Street; 4] = [Street::Preflop, Street::Flop, Street::Turn, Street::River];
 
@@ -332,48 +394,78 @@ pub fn adjust(
             *p = 0.0;
         }
     }
-    let mut budget = cfg.max_shift;
-    let mut moved = 0.0;
-    let mut rule = "";
-    let ck = ActionKind::Check.index();
-    if let Some(st) = strength(
+    let fold = strength(
         profile.fold_to_aggression[s],
         cfg.fold_threshold,
         cfg.min_samples,
-    ) && let Some(dest) = [ActionKind::HalfPot, ActionKind::Pot, ActionKind::AllIn]
-        .into_iter()
-        .find(|&k| legal(k))
-    {
-        let m = (cfg.max_shift * st).min(d[ck]).min(budget);
-        if m > 0.0 {
-            d[ck] -= m;
-            d[dest.index()] += m;
-            budget -= m;
-            moved += m;
-            rule = "over-folder: more small bets instead of checks";
-        }
-    }
-    if let Some(st) = strength(
+    );
+    let station = strength(
         profile.call_vs_aggression[s],
         cfg.station_threshold,
         cfg.min_samples,
-    ) {
-        let mut want = (cfg.max_shift * st).min(budget);
-        for k in [ActionKind::AllIn, ActionKind::Pot] {
-            let take = want.min(d[k.index()]);
-            if take > 0.0 {
-                d[k.index()] -= take;
-                d[ck] += take;
-                want -= take;
-                moved += take;
-                rule = if rule.is_empty() {
-                    "calling station: fewer large bets"
-                } else {
-                    "over-folder and calling station"
-                };
+    );
+    if fold.is_none() && station.is_none() {
+        return None; // cheap exit: no equity estimate needed
+    }
+    let e = hand_strength(obs.hole_cards, &obs.board)?;
+    let mut budget = cfg.max_shift;
+    let mut moved = 0.0;
+    let mut rules: Vec<&'static str> = Vec::new();
+    let ck = ActionKind::Check.index();
+    let first_legal = |ks: [ActionKind; 3]| ks.into_iter().find(|&k| legal(k));
+    let check_to = |d: &mut [f64; 6], dest: ActionKind, want: f64, budget: &mut f64| {
+        let m = want.min(d[ck]).min(*budget);
+        if m > 0.0 {
+            d[ck] -= m;
+            d[dest.index()] += m;
+            *budget -= m;
+        }
+        m.max(0.0)
+    };
+    if let Some(k) = station {
+        let want = cfg.max_shift * k;
+        if e >= VALUE_EQUITY {
+            if let Some(dest) =
+                first_legal([ActionKind::Pot, ActionKind::HalfPot, ActionKind::AllIn])
+            {
+                let m = check_to(&mut d, dest, want, &mut budget);
+                if m > 0.0 {
+                    moved += m;
+                    rules.push("calling station + strong hand: more value bets");
+                }
+            }
+        } else if e <= BLUFF_EQUITY {
+            let mut left = want.min(budget);
+            for kind in [ActionKind::AllIn, ActionKind::Pot, ActionKind::HalfPot] {
+                let take = left.min(d[kind.index()]);
+                if take > 0.0 {
+                    d[kind.index()] -= take;
+                    d[ck] += take;
+                    left -= take;
+                    budget -= take;
+                    moved += take;
+                }
+            }
+            if moved > 0.0 {
+                rules.push("calling station + weak hand: fewer bluffs");
             }
         }
     }
+    if let Some(k) = fold
+        && e < VALUE_EQUITY
+        && let Some(dest) = first_legal([ActionKind::HalfPot, ActionKind::Pot, ActionKind::AllIn])
+    {
+        let m = check_to(&mut d, dest, cfg.max_shift * k, &mut budget);
+        if m > 0.0 {
+            moved += m;
+            rules.push("over-folder + non-strong hand: more small bets");
+        }
+    }
+    let rule = match rules.as_slice() {
+        [] => "",
+        [one] => one,
+        _ => "calling station and over-folder",
+    };
     if moved <= 0.0 {
         return None;
     }

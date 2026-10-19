@@ -164,7 +164,7 @@ fn same_config_gives_identical_report() {
     assert_eq!(r.candidate_counts.decisions, r.candidate_infer.decisions);
     assert_eq!(r.candidate_counts.fallbacks, r.candidate_infer.fallbacks);
     assert_eq!(
-        r.gate.verdict,
+        r.gate.as_ref().unwrap().verdict,
         Verdict::Hold,
         "unpinned tiny artifact never promotes"
     );

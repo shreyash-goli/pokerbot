@@ -25,11 +25,24 @@
 //! Agents receive only `state.observation(seat)` for their own seat. The
 //! runner asserts, before each call, that the observation belongs to the
 //! acting seat and carries no opponent hole cards.
+//!
+//! # Between-hand observation (adaptive agents)
+//! A [`Participant`] may ask for its finished hands. It then receives
+//! `state.events_for(Viewer::Seat(own seat))` for **every** hand it played,
+//! in play order. Delivery happens at the **pair boundary**: both games of a
+//! deal pair are played with the same participant state, and only then are
+//! the two hands' events delivered. So the second game of a pair never
+//! benefits from what was seen in the first game of the same deal. That
+//! keeps the pair a like-for-like comparison, while the profile still
+//! accumulates across the whole match. The runner checks that a delivered
+//! stream holds no opponent `HoleCards` event.
 
 use std::fmt;
 
+use mako_analysis::opponent::{AdaptStats, AdaptiveAgent};
 use mako_core::card::Card;
 use mako_core::deck::Deck;
+use mako_core::events::{HandEvent, Viewer};
 use mako_core::rng::{MakoRng, splitmix64_next};
 use mako_core::rules::{ActionKind, Position, RulesConfig};
 use mako_core::state::{HandConfig, HandState, Seat, TerminalReason};
@@ -80,6 +93,8 @@ pub enum MatchError {
     InformationLeak(String),
     /// Invalid parameters.
     Config(String),
+    /// A participant rejected a finished hand's events.
+    Observer { label: String, error: String },
 }
 
 impl fmt::Display for MatchError {
@@ -100,6 +115,9 @@ impl fmt::Display for MatchError {
             MatchError::TooManyActions(n) => write!(f, "hand exceeded {n} actions"),
             MatchError::InformationLeak(m) => write!(f, "information boundary violated: {m}"),
             MatchError::Config(m) => write!(f, "invalid match parameters: {m}"),
+            MatchError::Observer { label, error } => {
+                write!(f, "{label}: rejected hand events: {error}")
+            }
         }
     }
 }
@@ -140,6 +158,9 @@ pub struct HandLog {
     pub payoffs: [i64; 2],
     pub showdown: bool,
     pub actions: u32,
+    /// Viewer-filtered events per seat index; empty unless that seat's
+    /// participant asked for them.
+    pub events: [Vec<HandEvent>; 2],
 }
 
 /// One deal pair: A's net chips in each game.
@@ -172,6 +193,12 @@ pub struct MatchResult {
     /// The agents' own counters at the end of the match, if they keep any.
     pub infer_a: Option<InferStats>,
     pub infer_b: Option<InferStats>,
+    /// Adaptation counters at the end of the match (adaptive agents only).
+    pub adapt_a: Option<AdaptStats>,
+    pub adapt_b: Option<AdaptStats>,
+    /// Finished hands delivered to each participant.
+    pub delivered_a: u64,
+    pub delivered_b: u64,
     pub showdowns: u64,
 }
 
@@ -189,6 +216,65 @@ pub struct MatchSpec {
     pub base_seed: u64,
     pub pairs: u64,
     pub max_actions: u32,
+}
+
+/// A seat occupant as seen by the runner: an [`Agent`] plus optional
+/// between-hand observation.
+pub trait Participant {
+    /// The decision-making agent.
+    fn agent(&mut self) -> &mut dyn Agent;
+    /// Label of the agent.
+    fn label(&self) -> String;
+    /// The agent's own inference counters.
+    fn infer_stats(&self) -> Option<InferStats>;
+    /// Whether to deliver finished hands to [`Participant::hand_finished`].
+    fn wants_events(&self) -> bool {
+        false
+    }
+    /// Receives one finished hand: its own viewer-filtered events.
+    fn hand_finished(&mut self, _events: &[HandEvent]) -> Result<(), String> {
+        Ok(())
+    }
+    /// Adaptation counters, for adaptive agents.
+    fn adapt_stats(&self) -> Option<AdaptStats> {
+        None
+    }
+}
+
+/// A plain agent that does not observe finished hands.
+pub struct Plain<'a>(pub &'a mut dyn Agent);
+
+impl Participant for Plain<'_> {
+    fn agent(&mut self) -> &mut dyn Agent {
+        &mut *self.0
+    }
+    fn label(&self) -> String {
+        self.0.label()
+    }
+    fn infer_stats(&self) -> Option<InferStats> {
+        self.0.infer_stats()
+    }
+}
+
+impl<A: Agent + ?Sized> Participant for AdaptiveAgent<A> {
+    fn agent(&mut self) -> &mut dyn Agent {
+        self
+    }
+    fn label(&self) -> String {
+        Agent::label(self)
+    }
+    fn infer_stats(&self) -> Option<InferStats> {
+        Agent::infer_stats(self)
+    }
+    fn wants_events(&self) -> bool {
+        true
+    }
+    fn hand_finished(&mut self, events: &[HandEvent]) -> Result<(), String> {
+        self.observe_hand(events).map_err(|e| e.to_string())
+    }
+    fn adapt_stats(&self) -> Option<AdaptStats> {
+        Some(AdaptiveAgent::adapt_stats(self))
+    }
 }
 
 /// Samples a legal class from `dist` with `u` in `[0, 1)`.
@@ -223,9 +309,29 @@ pub fn play_hand(
     rules: RulesConfig,
     button: Seat,
     deal_seed: u64,
+    agents: [&mut dyn Agent; 2],
+    counts: &mut [DecisionCounts; 2],
+    max_actions: u32,
+) -> Result<HandLog, MatchError> {
+    play_hand_with(
+        rules,
+        button,
+        deal_seed,
+        agents,
+        counts,
+        max_actions,
+        [false; 2],
+    )
+}
+
+fn play_hand_with(
+    rules: RulesConfig,
+    button: Seat,
+    deal_seed: u64,
     mut agents: [&mut dyn Agent; 2],
     counts: &mut [DecisionCounts; 2],
     max_actions: u32,
+    want_events: [bool; 2],
 ) -> Result<HandLog, MatchError> {
     let deck = Deck::from_seed(deal_seed);
     let order: Vec<Card> = deck.order()[..9].to_vec();
@@ -298,6 +404,23 @@ pub fn play_hand(
     if total != 2 * i64::from(rules.starting_stack) {
         return Err(MatchError::Engine("chips not conserved".into()));
     }
+    let events = Seat::ALL.map(|seat| {
+        if want_events[seat.index()] {
+            state.events_for(Viewer::Seat(seat))
+        } else {
+            Vec::new()
+        }
+    });
+    for seat in Seat::ALL {
+        let leak = events[seat.index()]
+            .iter()
+            .any(|e| matches!(e, HandEvent::HoleCards { seat: s, .. } if *s != seat));
+        if leak {
+            return Err(MatchError::InformationLeak(
+                "opponent hole-card event in a seat's event stream".into(),
+            ));
+        }
+    }
     Ok(HandLog {
         deal_seed,
         button,
@@ -306,6 +429,7 @@ pub fn play_hand(
         payoffs,
         showdown: state.terminal_reason() == Some(TerminalReason::Showdown),
         actions,
+        events,
     })
 }
 
@@ -321,24 +445,65 @@ pub fn play_pair(
     max_actions: u32,
 ) -> Result<(PairResult, [HandLog; 2]), MatchError> {
     let mut counts = [*counts_a, *counts_b];
-    let g1 = play_hand(
+    let r = play_pair_with(
         rules,
-        Seat::Zero,
         seed,
-        [&mut *a, &mut *b],
-        &mut counts,
-        max_actions,
-    )?;
-    let g2 = play_hand(
-        rules,
-        Seat::One,
-        seed,
-        [&mut *a, &mut *b],
+        &mut Plain(a),
+        &mut Plain(b),
         &mut counts,
         max_actions,
     )?;
     *counts_a = counts[0];
     *counts_b = counts[1];
+    Ok(r)
+}
+
+fn deliver(p: &mut dyn Participant, seat: usize, games: [&HandLog; 2]) -> Result<(), MatchError> {
+    for g in games {
+        p.hand_finished(&g.events[seat])
+            .map_err(|error| MatchError::Observer {
+                label: p.label(),
+                error,
+            })?;
+    }
+    Ok(())
+}
+
+/// [`play_pair`] for participants; delivers both hands' events to those
+/// that want them after the pair (see the module docs).
+pub fn play_pair_with(
+    rules: RulesConfig,
+    seed: u64,
+    a: &mut dyn Participant,
+    b: &mut dyn Participant,
+    counts: &mut [DecisionCounts; 2],
+    max_actions: u32,
+) -> Result<(PairResult, [HandLog; 2]), MatchError> {
+    let want = [a.wants_events(), b.wants_events()];
+    let g1 = play_hand_with(
+        rules,
+        Seat::Zero,
+        seed,
+        [a.agent(), b.agent()],
+        counts,
+        max_actions,
+        want,
+    )?;
+    let g2 = play_hand_with(
+        rules,
+        Seat::One,
+        seed,
+        [a.agent(), b.agent()],
+        counts,
+        max_actions,
+        want,
+    )?;
+    if want[0] {
+        deliver(a, 0, [&g1, &g2])?;
+    }
+    if want[1] {
+        deliver(b, 1, [&g1, &g2])?;
+    }
     let pair = PairResult {
         deal_seed: seed,
         a_button: g1.payoffs[0],
@@ -347,11 +512,20 @@ pub fn play_pair(
     Ok((pair, [g1, g2]))
 }
 
-/// Plays a full paired match.
+/// Plays a full paired match between plain agents.
 pub fn run_match(
     spec: &MatchSpec,
     a: &mut dyn Agent,
     b: &mut dyn Agent,
+) -> Result<MatchResult, MatchError> {
+    run_match_with(spec, &mut Plain(a), &mut Plain(b))
+}
+
+/// Plays a full paired match between participants (A in seat `Zero`).
+pub fn run_match_with(
+    spec: &MatchSpec,
+    a: &mut dyn Participant,
+    b: &mut dyn Participant,
 ) -> Result<MatchResult, MatchError> {
     if spec.pairs == 0 || spec.pairs > MAX_PAIRS {
         return Err(MatchError::Config(format!(
@@ -372,23 +546,29 @@ pub fn run_match(
         counts_b: DecisionCounts::default(),
         infer_a: None,
         infer_b: None,
+        adapt_a: None,
+        adapt_b: None,
+        delivered_a: 0,
+        delivered_b: 0,
         showdowns: 0,
     };
+    let mut counts = [DecisionCounts::default(); 2];
     for i in 0..spec.pairs {
         let seed = deal_seed(spec.base_seed, i);
-        let (pair, logs) = play_pair(
-            spec.rules,
-            seed,
-            a,
-            b,
-            &mut res.counts_a,
-            &mut res.counts_b,
-            spec.max_actions,
-        )?;
+        let (pair, logs) = play_pair_with(spec.rules, seed, a, b, &mut counts, spec.max_actions)?;
+        if a.wants_events() {
+            res.delivered_a += 2;
+        }
+        if b.wants_events() {
+            res.delivered_b += 2;
+        }
         res.showdowns += logs.iter().filter(|l| l.showdown).count() as u64;
         res.pairs.push(pair);
     }
+    [res.counts_a, res.counts_b] = counts;
     res.infer_a = a.infer_stats();
     res.infer_b = b.infer_stats();
+    res.adapt_a = a.adapt_stats();
+    res.adapt_b = b.adapt_stats();
     Ok(res)
 }

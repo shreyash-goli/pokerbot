@@ -11,23 +11,45 @@
 //! [policy]  artifact*, expected_checksum ("0x..." hex string), agent_seed (0)
 //! [rules]   depth_bb*, small_blind (1), big_blind (2)
 //! [eval]    base_seed*, deal_pairs*, opponents* (subset of random, checkcall,
-//!           tight, mirror), sanity_random_vs_checkcall (true),
+//!           tight, mirror, cfr), mode ("promotion" | "comparison"; default
+//!           "promotion"), candidates (subset of cfr, adaptive_cfr; default
+//!           ["cfr"]), sanity_random_vs_checkcall (true),
 //!           bootstrap_resamples (0 = off), bootstrap_seed (0),
 //!           max_actions_per_hand (512)
-//! [gate]    min_hands*, require_positive_ci_vs*, max_fallback_rate_bp*
+//! [adaptive] (required iff a candidate is adaptive_cfr) enabled*,
+//!           min_samples (20), max_shift_bp (1000), fold_threshold_bp (6000),
+//!           station_threshold_bp (6000), seed (0)
+//! [gate]    required in promotion mode, forbidden in comparison mode:
+//!           min_hands*, require_positive_ci_vs*, max_fallback_rate_bp*
 //!           (basis points, 100 = 1%), require_pinned_checksum (true)
 //! ```
+//!
+//! Promotion mode gates the fixed `cfr` candidate. Comparison mode only
+//! reports (e.g. fixed vs adaptive) and never yields a verdict.
 
 use std::collections::BTreeMap;
 use std::fmt;
 
+use mako_analysis::opponent::AdaptConfig;
 use mako_core::rules::RulesConfig;
 
 use crate::gate::GateConfig;
 use crate::matchup::{DEFAULT_MAX_ACTIONS, MAX_PAIRS};
 
-/// Known opponent ids.
-pub const OPPONENTS: &[&str] = &["random", "checkcall", "tight", "mirror"];
+/// Known opponent ids. `cfr` is a fixed CFR opponent (for head-to-head
+/// against `adaptive_cfr`); `mirror` is the candidate's own kind.
+pub const OPPONENTS: &[&str] = &["random", "checkcall", "tight", "mirror", "cfr"];
+/// Known candidate kinds.
+pub const CANDIDATES: &[&str] = &["cfr", "adaptive_cfr"];
+
+/// What the run is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Gate the fixed CFR candidate (PROMOTE/HOLD).
+    Promotion,
+    /// Report a comparison only; no verdict.
+    Comparison,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Value {
@@ -71,6 +93,17 @@ fn gerr(m: impl Into<String>) -> EvalConfigError {
 
 const SCHEMA: &[(&str, &[&str])] = &[
     ("policy", &["artifact", "expected_checksum", "agent_seed"]),
+    (
+        "adaptive",
+        &[
+            "enabled",
+            "min_samples",
+            "max_shift_bp",
+            "fold_threshold_bp",
+            "station_threshold_bp",
+            "seed",
+        ],
+    ),
     ("rules", &["depth_bb", "small_blind", "big_blind"]),
     (
         "eval",
@@ -78,6 +111,8 @@ const SCHEMA: &[(&str, &[&str])] = &[
             "base_seed",
             "deal_pairs",
             "opponents",
+            "mode",
+            "candidates",
             "sanity_random_vs_checkcall",
             "bootstrap_resamples",
             "bootstrap_seed",
@@ -257,15 +292,20 @@ impl Doc {
             Some((_, l)) => Err(err(*l, format!("`{k}` must be a quoted string"))),
         }
     }
-    fn list(&self, s: &str, k: &str) -> Result<Vec<String>, EvalConfigError> {
+    fn list(
+        &self,
+        s: &str,
+        k: &str,
+        known: &[&str],
+    ) -> Result<Option<Vec<String>>, EvalConfigError> {
         match self.get(s, k) {
-            None => Err(Self::missing(s, k)),
+            None => Ok(None),
             Some((Value::List(v), l)) => {
                 for item in v {
-                    if !OPPONENTS.contains(&item.as_str()) {
+                    if !known.contains(&item.as_str()) {
                         return Err(err(
                             *l,
-                            format!("unknown opponent {item:?}; known: {OPPONENTS:?}"),
+                            format!("unknown entry {item:?} in `{k}`; known: {known:?}"),
                         ));
                     }
                 }
@@ -275,7 +315,7 @@ impl Doc {
                 if seen.len() != v.len() {
                     return Err(err(*l, format!("`{k}` has duplicate entries")));
                 }
-                Ok(v.clone())
+                Ok(Some(v.clone()))
             }
             Some((_, l)) => Err(err(*l, format!("`{k}` must be an array of strings"))),
         }
@@ -307,7 +347,12 @@ pub struct EvalConfig {
     pub bootstrap_resamples: u32,
     pub bootstrap_seed: u64,
     pub max_actions_per_hand: u32,
-    pub gate: GateConfig,
+    pub mode: Mode,
+    pub candidates: Vec<String>,
+    /// Adaptive-agent settings (present iff `adaptive_cfr` is a candidate).
+    pub adaptive: Option<AdaptConfig>,
+    /// Gate thresholds (promotion mode only).
+    pub gate: Option<GateConfig>,
 }
 
 impl EvalConfig {
@@ -339,10 +384,27 @@ impl EvalConfig {
 
         let base_seed = d.req_int("eval", "base_seed", 0, i64::MAX)? as u64;
         let deal_pairs = d.req_int("eval", "deal_pairs", 1, MAX_PAIRS as i64)? as u64;
-        let opponents = d.list("eval", "opponents")?;
+        let opponents = d
+            .list("eval", "opponents", OPPONENTS)?
+            .ok_or_else(|| Doc::missing("eval", "opponents"))?;
         if opponents.is_empty() {
             return Err(gerr("[eval] opponents must not be empty"));
         }
+        let candidates = d
+            .list("eval", "candidates", CANDIDATES)?
+            .unwrap_or_else(|| vec!["cfr".into()]);
+        if candidates.is_empty() {
+            return Err(gerr("[eval] candidates must not be empty"));
+        }
+        let mode = match d.string("eval", "mode")?.as_deref() {
+            None | Some("promotion") => Mode::Promotion,
+            Some("comparison") => Mode::Comparison,
+            Some(m) => {
+                return Err(gerr(format!(
+                    "[eval] mode must be \"promotion\" or \"comparison\", got {m:?}"
+                )));
+            }
+        };
         let sanity = d.boolean("eval", "sanity_random_vs_checkcall", true)?;
         let bootstrap_resamples = d
             .int("eval", "bootstrap_resamples", 0, 100_000)?
@@ -352,22 +414,80 @@ impl EvalConfig {
             .int("eval", "max_actions_per_hand", 1, 100_000)?
             .unwrap_or(i64::from(DEFAULT_MAX_ACTIONS)) as u32;
 
-        let min_hands = d.req_int("gate", "min_hands", 1, i64::MAX)? as u64;
-        let require = d.list("gate", "require_positive_ci_vs")?;
-        for r in &require {
-            if !opponents.contains(r) {
-                return Err(gerr(format!(
-                    "[gate] requires {r:?}, which is not in [eval] opponents"
-                )));
-            }
-            if r == "mirror" {
+        let has_adaptive_keys = d.0.keys().any(|(sec, _)| sec == "adaptive");
+        let adaptive = if candidates.iter().any(|c| c == "adaptive_cfr") {
+            if d.get("adaptive", "enabled").is_none() {
                 return Err(gerr(
-                    "[gate] cannot require a positive result vs the mirror",
+                    "candidate \"adaptive_cfr\" needs an [adaptive] section with an explicit `enabled`",
                 ));
             }
-        }
-        let fb = d.req_int("gate", "max_fallback_rate_bp", 0, 10_000)?;
-        let require_pinned = d.boolean("gate", "require_pinned_checksum", true)?;
+            let def = AdaptConfig::default();
+            let bp = |k, dflt: f64| -> Result<f64, EvalConfigError> {
+                Ok(d.int("adaptive", k, 0, 10_000)?
+                    .map_or(dflt, |v| v as f64 / 10_000.0))
+            };
+            let a = AdaptConfig {
+                enabled: d.boolean("adaptive", "enabled", true)?,
+                min_samples: d
+                    .int("adaptive", "min_samples", 1, i64::MAX)?
+                    .map_or(def.min_samples, |v| v as u64),
+                max_shift: bp("max_shift_bp", def.max_shift)?,
+                fold_threshold: bp("fold_threshold_bp", def.fold_threshold)?,
+                station_threshold: bp("station_threshold_bp", def.station_threshold)?,
+                seed: d
+                    .int("adaptive", "seed", 0, i64::MAX)?
+                    .map_or(def.seed, |v| v as u64),
+            };
+            a.validate().map_err(|e| gerr(format!("[adaptive] {e}")))?;
+            Some(a)
+        } else {
+            if has_adaptive_keys {
+                return Err(gerr(
+                    "[adaptive] is set but no candidate is \"adaptive_cfr\"",
+                ));
+            }
+            None
+        };
+
+        let has_gate_keys = d.0.keys().any(|(sec, _)| sec == "gate");
+        let gate = match mode {
+            Mode::Comparison => {
+                if has_gate_keys {
+                    return Err(gerr(
+                        "[gate] is not allowed in comparison mode (a comparison is not a promotion)",
+                    ));
+                }
+                None
+            }
+            Mode::Promotion => {
+                if !candidates.iter().any(|c| c == "cfr") {
+                    return Err(gerr("promotion mode needs the \"cfr\" candidate"));
+                }
+                let min_hands = d.req_int("gate", "min_hands", 1, i64::MAX)? as u64;
+                let require = d
+                    .list("gate", "require_positive_ci_vs", OPPONENTS)?
+                    .ok_or_else(|| Doc::missing("gate", "require_positive_ci_vs"))?;
+                for r in &require {
+                    if !opponents.contains(r) {
+                        return Err(gerr(format!(
+                            "[gate] requires {r:?}, which is not in [eval] opponents"
+                        )));
+                    }
+                    if r == "mirror" || r == "cfr" {
+                        return Err(gerr(format!(
+                            "[gate] cannot require a positive result vs {r:?}"
+                        )));
+                    }
+                }
+                let fb = d.req_int("gate", "max_fallback_rate_bp", 0, 10_000)?;
+                Some(GateConfig {
+                    min_hands,
+                    require_positive_ci_vs: require,
+                    max_fallback_rate: fb as f64 / 10_000.0,
+                    require_pinned_checksum: d.boolean("gate", "require_pinned_checksum", true)?,
+                })
+            }
+        };
 
         Ok(Self {
             artifact,
@@ -382,12 +502,10 @@ impl EvalConfig {
             bootstrap_resamples,
             bootstrap_seed,
             max_actions_per_hand: max_actions,
-            gate: GateConfig {
-                min_hands,
-                require_positive_ci_vs: require,
-                max_fallback_rate: fb as f64 / 10_000.0,
-                require_pinned_checksum: require_pinned,
-            },
+            mode,
+            candidates,
+            adaptive,
+            gate,
         })
     }
 }

@@ -85,7 +85,7 @@ fn parse_args(raw: Vec<String>) -> Result<Option<Args>, String> {
     }))
 }
 
-fn run(args: Args) -> Result<Verdict, String> {
+fn run(args: Args) -> Result<Option<Verdict>, String> {
     let text = std::fs::read_to_string(&args.config)
         .map_err(|e| format!("cannot read config {}: {e}", args.config.display()))?;
     let cfg = EvalConfig::parse(&text).map_err(|e| format!("{}: {e}", args.config.display()))?;
@@ -113,7 +113,7 @@ fn run(args: Args) -> Result<Verdict, String> {
             .map_err(|e| format!("cannot write {}: {e}", j.display()))?;
         println!("json report: {}", j.display());
     }
-    Ok(report.gate.verdict)
+    Ok(report.gate.map(|g| g.verdict))
 }
 
 fn main() -> ExitCode {
@@ -130,7 +130,11 @@ fn main() -> ExitCode {
     };
     let require = args.require_promote;
     match run(args) {
-        Ok(Verdict::Hold) if require => ExitCode::from(3),
+        Ok(Some(Verdict::Hold)) if require => ExitCode::from(3),
+        Ok(None) if require => {
+            eprintln!("mako-eval: --require-promote: comparison mode gives no verdict");
+            ExitCode::from(2)
+        }
         Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("mako-eval: error: {e}");

@@ -1,17 +1,29 @@
 //! End-to-end evaluation: load and check the artifact, run every configured
-//! matchup, summarize, and apply the promotion gate.
+//! matchup, summarize, and apply the promotion gate (promotion mode) or
+//! report a fixed-vs-adaptive comparison (comparison mode).
 
 use std::fmt;
 use std::path::Path;
 
+use mako_analysis::opponent::{AdaptConfig, AdaptiveAgent};
 use mako_core::rules::RulesConfig;
+use mako_core::state::Seat;
 
 use crate::agent::{Agent, CfrAgent, InferStats};
 use crate::baselines::{CheckCall, RandomLegal, TightRule};
-use crate::config::EvalConfig;
+use crate::config::{EvalConfig, Mode};
 use crate::gate::{ChecksumStatus, GateDecision, GateInput, decide};
-use crate::matchup::{DecisionCounts, MAX_PAIRS, MatchError, MatchSpec, run_match};
+use crate::matchup::{
+    DecisionCounts, MAX_PAIRS, MatchError, MatchResult, MatchSpec, PairResult, Participant,
+    run_match, run_match_with,
+};
 use crate::report::{MatchupReport, summarize_match};
+use crate::stats::{Summary, Z95, bootstrap_ci, summarize};
+
+/// Printed with every comparison-mode report.
+pub const COMPARISON_DISCLAIMER: &str = "Adaptive mode is experimental; this comparison does not \
+establish general strength. It compares two agents against a few fixed rule bots on the same \
+deals; no exploitability, Nash-distance or GTO measurement was performed.";
 
 /// Hard cap for `--pairs` on the command line.
 pub const MAX_CLI_PAIRS: u64 = 200_000;
@@ -134,8 +146,10 @@ pub struct EvalReport {
     pub pairs: u64,
     pub artifact: ArtifactInfo,
     pub checksum: ChecksumStatus,
+    pub mode: Mode,
     pub candidate_label: String,
-    /// Candidate (agent A) versus each configured opponent.
+    /// Candidate (agent A) versus each configured opponent, in config order
+    /// (candidates outer, opponents inner).
     pub matchups: Vec<MatchupReport>,
     /// Baseline-vs-baseline sanity matchups.
     pub sanity: Vec<MatchupReport>,
@@ -144,7 +158,93 @@ pub struct EvalReport {
     pub candidate_counts: DecisionCounts,
     /// Sum of the candidate agents' own `InferStats`.
     pub candidate_infer: InferStats,
-    pub gate: GateDecision,
+    /// Promotion verdict (promotion mode only).
+    pub gate: Option<GateDecision>,
+    /// Fixed − adaptive differences (comparison of `cfr` and `adaptive_cfr`
+    /// against the same opponent on the same deals).
+    pub comparisons: Vec<Comparison>,
+}
+
+/// Paired difference `fixed − adaptive` against one opponent.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Comparison {
+    pub opponent_id: String,
+    pub pairs: u64,
+    /// BB/100 of (fixed result − adaptive result) per deal pair. Positive
+    /// means the fixed policy did better on these deals.
+    pub fixed_minus_adaptive_bb100: Summary,
+    pub bootstrap: Option<(f64, f64)>,
+}
+
+/// Paired difference of two matches played on the same deals.
+pub fn paired_difference(
+    opponent_id: &str,
+    fixed: &[PairResult],
+    adaptive: &[PairResult],
+    big_blind: u32,
+    bootstrap: Option<(u32, u64)>,
+) -> Result<Comparison, EvalError> {
+    if fixed.len() != adaptive.len()
+        || fixed
+            .iter()
+            .zip(adaptive)
+            .any(|(f, a)| f.deal_seed != a.deal_seed)
+    {
+        return Err(EvalError::Config(
+            "comparison needs both matches on the same deal seeds".into(),
+        ));
+    }
+    let d: Vec<f64> = fixed
+        .iter()
+        .zip(adaptive)
+        .map(|(f, a)| (f.a_total() - a.a_total()) as f64)
+        .collect();
+    let scale = 100.0 / f64::from(big_blind) / 2.0;
+    Ok(Comparison {
+        opponent_id: opponent_id.to_string(),
+        pairs: d.len() as u64,
+        fixed_minus_adaptive_bb100: summarize(&d, Z95).scaled(scale),
+        bootstrap: bootstrap
+            .and_then(|(b, seed)| bootstrap_ci(&d, b, seed).map(|(l, h)| (l * scale, h * scale))),
+    })
+}
+
+/// Builds a seat occupant of `kind` sitting in `seat`.
+fn participant(
+    kind: &str,
+    seat: Seat,
+    art: &LoadedArtifact,
+    seed: u64,
+    adapt: Option<&AdaptConfig>,
+) -> Result<Box<dyn Participant>, EvalError> {
+    match kind {
+        "cfr" => Ok(Box::new(Owned(Box::new(art.agent(seed)?)))),
+        "adaptive_cfr" => {
+            let cfg = *adapt.ok_or_else(|| {
+                EvalError::Config("adaptive_cfr needs an [adaptive] section".into())
+            })?;
+            // The agent models whoever sits in the other seat.
+            let a = AdaptiveAgent::new(Box::new(art.agent(seed)?), seat.other(), cfg)
+                .map_err(|e| EvalError::Config(format!("[adaptive] {e}")))?;
+            Ok(Box::new(a))
+        }
+        other => Ok(Box::new(Owned(opponent(other, art, seed)?))),
+    }
+}
+
+/// An owned plain agent.
+struct Owned(Box<dyn Agent>);
+
+impl Participant for Owned {
+    fn agent(&mut self) -> &mut dyn Agent {
+        self.0.as_mut()
+    }
+    fn label(&self) -> String {
+        self.0.label()
+    }
+    fn infer_stats(&self) -> Option<InferStats> {
+        self.0.infer_stats()
+    }
 }
 
 fn opponent(id: &str, art: &LoadedArtifact, seed: u64) -> Result<Box<dyn Agent>, EvalError> {
@@ -152,7 +252,7 @@ fn opponent(id: &str, art: &LoadedArtifact, seed: u64) -> Result<Box<dyn Agent>,
         "random" => Box::new(RandomLegal::new(seed ^ 0x5241_4E44)),
         "checkcall" => Box::new(CheckCall),
         "tight" => Box::new(TightRule),
-        "mirror" => Box::new(art.agent(seed ^ 0x4D49_5252)?),
+        "mirror" | "cfr" => Box::new(art.agent(seed ^ 0x4D49_5252)?),
         other => return Err(EvalError::Config(format!("unknown opponent {other:?}"))),
     })
 }
@@ -212,23 +312,64 @@ pub fn run_evaluation(
         (cfg.bootstrap_resamples > 0).then_some((cfg.bootstrap_resamples, cfg.bootstrap_seed));
 
     let mut matchups = Vec::new();
+    let mut raw: Vec<(String, String, MatchResult)> = Vec::new();
     let mut counts = DecisionCounts::default();
     let mut infer = InferStats::default();
     let mut candidate_label = String::new();
-    for id in &cfg.opponents {
-        let mut cand = art.agent(cfg.agent_seed)?;
-        let mut opp = opponent(id, art, cfg.agent_seed)?;
-        let m = run_match(&spec, &mut cand, opp.as_mut())?;
-        candidate_label = m.label_a.clone();
-        counts.decisions += m.counts_a.decisions;
-        counts.fallbacks += m.counts_a.fallbacks;
-        add_infer(&mut infer, m.infer_a);
-        if id == "mirror" {
-            counts.decisions += m.counts_b.decisions;
-            counts.fallbacks += m.counts_b.fallbacks;
-            add_infer(&mut infer, m.infer_b);
+    for cand_id in &cfg.candidates {
+        for id in &cfg.opponents {
+            if cand_id == "cfr" && id == "cfr" {
+                continue; // identical to the mirror
+            }
+            let opp_kind = if id == "mirror" { cand_id.as_str() } else { id };
+            let opp_seed = if id == "mirror" || id == "cfr" {
+                cfg.agent_seed ^ 0x4D49_5252
+            } else {
+                cfg.agent_seed
+            };
+            let mut cand = participant(
+                cand_id,
+                Seat::Zero,
+                art,
+                cfg.agent_seed,
+                cfg.adaptive.as_ref(),
+            )?;
+            let mut opp = participant(opp_kind, Seat::One, art, opp_seed, cfg.adaptive.as_ref())?;
+            let m = run_match_with(&spec, cand.as_mut(), opp.as_mut())?;
+            if cand_id == "cfr" {
+                candidate_label = m.label_a.clone();
+                counts.decisions += m.counts_a.decisions;
+                counts.fallbacks += m.counts_a.fallbacks;
+                add_infer(&mut infer, m.infer_a);
+                if id == "mirror" {
+                    counts.decisions += m.counts_b.decisions;
+                    counts.fallbacks += m.counts_b.fallbacks;
+                    add_infer(&mut infer, m.infer_b);
+                }
+            } else if candidate_label.is_empty() {
+                candidate_label = m.label_a.clone();
+            }
+            let mut r = summarize_match(id, &m, boot);
+            r.candidate_id = cand_id.clone();
+            matchups.push(r);
+            raw.push((cand_id.clone(), id.clone(), m));
         }
-        matchups.push(summarize_match(id, &m, boot));
+    }
+
+    let mut comparisons = Vec::new();
+    for (_, opp, fixed) in raw.iter().filter(|(c, o, _)| c == "cfr" && o != "mirror") {
+        if let Some((_, _, adaptive)) = raw
+            .iter()
+            .find(|(c2, o2, _)| c2 == "adaptive_cfr" && o2 == opp)
+        {
+            comparisons.push(paired_difference(
+                opp,
+                &fixed.pairs,
+                &adaptive.pairs,
+                cfg.rules.big_blind,
+                boot,
+            )?);
+        }
     }
 
     let mut sanity = Vec::new();
@@ -247,14 +388,24 @@ pub fn run_evaluation(
         },
         None => ChecksumStatus::NotPinned(art.info.checksum),
     };
-    let gate = decide(
-        &cfg.gate,
-        &GateInput {
-            matchups: &matchups,
-            candidate: counts,
-            checksum,
-        },
-    );
+    let gate = match (&cfg.mode, &cfg.gate) {
+        (Mode::Promotion, Some(g)) => {
+            let fixed: Vec<MatchupReport> = matchups
+                .iter()
+                .filter(|m| m.candidate_id == "cfr")
+                .cloned()
+                .collect();
+            Some(decide(
+                g,
+                &GateInput {
+                    matchups: &fixed,
+                    candidate: counts,
+                    checksum,
+                },
+            ))
+        }
+        _ => None,
+    };
     Ok(EvalReport {
         depth_bb: cfg.depth_bb,
         rules: cfg.rules,
@@ -262,11 +413,13 @@ pub fn run_evaluation(
         pairs,
         artifact: art.info.clone(),
         checksum,
+        mode: cfg.mode,
         candidate_label,
         matchups,
         sanity,
         candidate_counts: counts,
         candidate_infer: infer,
         gate,
+        comparisons,
     })
 }

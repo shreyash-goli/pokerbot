@@ -1,5 +1,7 @@
 //! Per-matchup statistics derived from raw match results.
 
+use mako_analysis::opponent::AdaptStats;
+
 use crate::agent::InferStats;
 use crate::matchup::{DecisionCounts, MatchResult};
 use crate::stats::{Summary, Z95, bootstrap_ci, summarize};
@@ -7,6 +9,8 @@ use crate::stats::{Summary, Z95, bootstrap_ci, summarize};
 /// Statistics for one matchup, from agent A's point of view.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatchupReport {
+    /// Candidate kind (`cfr` or `adaptive_cfr`) playing as A.
+    pub candidate_id: String,
     /// Short opponent id (`random`, `checkcall`, `tight`, `mirror`, ...).
     pub opponent_id: String,
     pub label_a: String,
@@ -31,6 +35,11 @@ pub struct MatchupReport {
     pub counts_b: DecisionCounts,
     pub infer_a: Option<InferStats>,
     pub infer_b: Option<InferStats>,
+    pub adapt_a: Option<AdaptStats>,
+    pub adapt_b: Option<AdaptStats>,
+    /// Finished hands delivered to each side's opponent model.
+    pub delivered_a: u64,
+    pub delivered_b: u64,
 }
 
 /// Build the report. `bootstrap = (resamples, seed)`.
@@ -48,6 +57,7 @@ pub fn summarize_match(
     let hand_scale = 100.0 / f64::from(bb);
     let a_net: i64 = m.pairs.iter().map(|p| p.a_total()).sum();
     MatchupReport {
+        candidate_id: "cfr".into(),
         opponent_id: opponent_id.to_string(),
         label_a: m.label_a.clone(),
         label_b: m.label_b.clone(),
@@ -68,5 +78,9 @@ pub fn summarize_match(
         counts_b: m.counts_b,
         infer_a: m.infer_a,
         infer_b: m.infer_b,
+        adapt_a: m.adapt_a,
+        adapt_b: m.adapt_b,
+        delivered_a: m.delivered_a,
+        delivered_b: m.delivered_b,
     }
 }

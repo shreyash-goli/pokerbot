@@ -157,3 +157,150 @@ against weak rule bots only.
   about strength.
 * A 0% fallback rate means every info set the harness reached was in the
   artifact. Opponents that steer into rarer lines could see a higher rate.
+
+## Fixed vs adaptive comparison (M-20 comparator)
+
+`configs/eval_adaptive.toml` (`mode = "comparison"`) runs the fixed CFR
+policy (`cfr`) and the opt-in adaptive wrapper (`adaptive_cfr`, see
+`crates/mako-analysis/src/opponent.rs`) against the same opponents on the
+**same deal stream**. **Adaptive mode is experimental; this comparison does
+not establish general strength.** There is no `[gate]` and no verdict, and
+the config parser rejects a `[gate]` section in comparison mode.
+
+```sh
+cargo run --release -p mako-eval -- --config configs/eval_adaptive.toml [--json out.json]
+```
+
+### Design
+* **Observation.** The adaptive agent decides from its own
+  `PlayerObservation`. After **every** hand the harness calls
+  `observe_hand` with that hand's
+  `events_for(Viewer::Seat(own seat))`. The runner checks that the stream
+  holds no opponent `HoleCards` event, and `OpponentProfile` itself refuses
+  one.
+* **Profile scope.** One profile models the opponent across the whole match;
+  it is never reset. Events are delivered at the **pair boundary**: both
+  seat-swapped games of a deal are played with the same profile state, and
+  then both hands are fed in play order. The second game of a deal therefore
+  never uses what was seen in the first game of that deal, so the pair stays
+  a like-for-like comparison. A side effect is that an adaptive-vs-adaptive
+  mirror remains exactly antisymmetric (tested).
+* **Sampling.** `AdaptiveAgent::act` reports the *shifted* distribution in
+  `Decision.distribution`, and the harness re-samples from it with its own
+  keyed stream (see "Decision sampling"). Adaptation is therefore applied,
+  not bypassed; `tests/adaptive.rs` checks this on every adapted decision.
+* **Paired difference.** For each opponent, `d_i` = fixed result − adaptive
+  result on deal pair `i` (chips over both games). The mean and 95% CI of
+  `d_i` are scaled to BB/100 exactly as in "Statistics". Positive means the
+  fixed policy did better on those deals. Both runs share deals and
+  harness draw streams, so the CI on the difference is much tighter than
+  either matchup's own CI.
+* With `enabled = false` the adaptive agent gives results identical to fixed
+  CFR on every deal (tested): every difference is exactly 0.
+
+### Results
+
+Every run below uses artifact `0xe673b32895f96760`, 20,000 pairs = 40,000
+hands per matchup, and a release build. Between configs only the eval
+`base_seed` differs, and between rule versions only
+`crates/mako-analysis/src/opponent.rs` changed. Run A and run C use
+`configs/eval_adaptive.toml` (seed 2718281829). Run B, the primary result
+for the revised rule, uses `configs/eval_adaptive_v2.toml` (seed
+3141592653). That config is identical except for `base_seed` and was
+pre-registered in `docs/PROGRESS.md` (commit 2e35cde) before it was run.
+
+#### Run A (2026-11-15): original rule, seed 2718281829
+
+`opponent.rs` v1, applied only when nothing is owed:
+* *Over-folder:* move Check to the smallest bet.
+* *Calling station:* move the largest bets (AllIn, Pot) to Check,
+  **regardless of hand strength**.
+
+| opponent | fixed BB/100 [95% CI] | adaptive BB/100 [95% CI] | fixed − adaptive [95% CI] | decisions shifted |
+|---|---|---|---|---|
+| random-legal | +88.91 [+81.14, +96.68] | +88.91 [+81.14, +96.68] | 0.00 (exact) | 0 of 70,279 |
+| check-call | +132.94 [+125.85, +140.03] | +110.96 [+104.40, +117.51] | **+21.98** [+18.71, +25.25] | 114,598 of 135,297 (84.7%) |
+| tight | +23.23 [+18.63, +27.83] | +23.52 [+18.98, +28.06] | −0.29 [−0.90, +0.32] | 11,834 of 55,463 (21.3%) |
+| fixed CFR (head-to-head) | n/a | 0.00 (exact) | n/a | 3 of 78,540 |
+
+Run A against check-call: the adaptive agent did **worse** than fixed by
+about 22 BB/100, and the CI excludes 0. The calling-station rule removed
+value bets as well as bluffs.
+
+#### Run B (2026-11-15): revised rule, fresh pre-registered seed 3141592653 (primary)
+
+`opponent.rs` v2. Here `e` is the agent's own equity vs a random hand, from
+its own cards and the visible board only.
+* *Calling station:* if `e ≥ 0.65`, move Check to the largest
+  non-all-in bet (value-bet more). If `e ≤ 0.40`, move bets to Check (bluff
+  less). Otherwise no change.
+* *Over-folder:* if `e < 0.65`, move Check to the smallest bet. Strong hands
+  are unchanged.
+
+The thresholds (VALUE_EQUITY 0.65, BLUFF_EQUITY 0.40, statistic thresholds
+0.60) were frozen before this run.
+
+| opponent | fixed BB/100 [95% CI] | adaptive BB/100 [95% CI] | fixed − adaptive [95% CI] | decisions shifted |
+|---|---|---|---|---|
+| random-legal | +92.26 [+84.53, +100.00] | +92.26 [+84.53, +100.00] | 0.00 (exact) | 0 of 71,162 |
+| check-call | +133.00 [+125.94, +140.07] | +170.71 [+163.74, +177.69] | **−37.71** [−40.00, −35.42] | 68,214 of 133,787 (51.0%) |
+| tight | +22.08 [+17.56, +26.60] | +24.30 [+19.81, +28.80] | **−2.22** [−2.75, −1.69] | 8,250 of 55,840 (14.8%) |
+| fixed CFR (head-to-head) | n/a | 0.00 (exact) | n/a | 0 of 79,753 |
+
+Run B took 14.6 s. On this pre-registered fresh seed the revised adaptive
+agent did better than fixed against check-call (by about 38 BB/100) and
+against tight (by about 2.2 BB/100), and both CIs exclude 0. Random-legal
+triggers no rule, and against fixed CFR no rule fired at all. All mirrors
+are exactly 0, and the fallback rate is 0.00% of 420,226 fixed-candidate
+decisions.
+
+#### Run C (2026-11-15): revised rule, seed 2718281829 (post-hoc)
+
+**Post-hoc, same seed that motivated the revision; not an independent
+test.** Same rule as run B, on run A's config.
+
+| opponent | fixed BB/100 [95% CI] | adaptive BB/100 [95% CI] | fixed − adaptive [95% CI] | decisions shifted |
+|---|---|---|---|---|
+| random-legal | +88.91 [+81.14, +96.68] | +88.91 [+81.14, +96.68] | 0.00 (exact) | 0 of 70,279 |
+| check-call | +132.94 [+125.85, +140.03] | +169.80 [+162.81, +176.80] | **−36.86** [−39.14, −34.59] | 67,452 of 132,944 (50.7%) |
+| tight | +23.23 [+18.63, +27.83] | +24.99 [+20.42, +29.56] | **−1.76** [−2.29, −1.22] | 8,070 of 55,416 (14.6%) |
+| fixed CFR (head-to-head) | n/a | 0.00 (exact) | n/a | 3 of 78,540 |
+
+Run C agrees with run B to within about 1 BB/100 on every difference.
+
+#### Caveats
+
+* Run B is the reported result for the revised rule. It is independent of
+  the seed that prompted the revision, but the opponents are the same three
+  rule bots, so it confirms the effect against *these* bots only.
+* Against fixed CFR the rules never or almost never fire (0 shifts in run B,
+  3 in runs A and C), so nothing here shows that adaptation helps against a
+  capable or balanced opponent.
+* Check-call and tight are fixed, non-adapting rule bots. Exploiting them is
+  easy and says little about general strength.
+* These results cover one smoke artifact and the default adaptation settings
+  only.
+
+### JSON report fields
+
+`--json` writes one object (`"format": "mako-eval-report v1"`), with no
+timings. The keys added for the comparator are:
+
+* `mode`: `"promotion"` or `"comparison"`.
+* `gate`: `{verdict, checks[]}` in promotion mode; **`null`** in comparison
+  mode.
+* `comparison_note`: the experimental-mode disclaimer string in comparison
+  mode, otherwise `null`.
+* `comparisons[]`: one entry per opponent played by both `cfr` and
+  `adaptive_cfr`, with `opponent`, `pairs`, `fixed_minus_adaptive_bb100`
+  (`{n, mean, sd, se, ci95_low, ci95_high}`; positive means fixed did
+  better) and `bootstrap_ci95` (`[low, high]` or `null`).
+* In each `matchups[]` / `sanity[]` entry:
+  * `candidate` is `"cfr"` or `"adaptive_cfr"`.
+  * `a_adapt_stats` / `b_adapt_stats` are `{decisions, adapted, mass_moved}`
+    for adaptive agents, otherwise `null`.
+  * `a_hands_observed` / `b_hands_observed` count the finished hands
+    delivered to that side's opponent model.
+
+Non-finite statistics (for example a CI with `n < 2`) are written as
+`null`.

@@ -36,15 +36,19 @@ fn smoke_config_parses_and_is_locked_sensibly() {
     }
     assert!(
         c.gate
+            .as_ref()
+            .unwrap()
             .require_positive_ci_vs
             .contains(&"random".to_string())
     );
     assert!(
         c.gate
+            .as_ref()
+            .unwrap()
             .require_positive_ci_vs
             .contains(&"checkcall".to_string())
     );
-    assert!(c.gate.min_hands <= 2 * c.deal_pairs);
+    assert!(c.gate.as_ref().unwrap().min_hands <= 2 * c.deal_pairs);
 }
 
 #[test]
@@ -53,8 +57,8 @@ fn minimal_config_defaults() {
     assert_eq!(c.rules.big_blind, 2);
     assert_eq!(c.expected_checksum, None);
     assert!(c.sanity_random_vs_checkcall);
-    assert!(c.gate.require_pinned_checksum);
-    assert!((c.gate.max_fallback_rate - 0.01).abs() < 1e-12);
+    assert!(c.gate.as_ref().unwrap().require_pinned_checksum);
+    assert!((c.gate.as_ref().unwrap().max_fallback_rate - 0.01).abs() < 1e-12);
 }
 
 #[test]
