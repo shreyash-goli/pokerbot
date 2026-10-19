@@ -11,7 +11,9 @@
 //! * [`screens`]: session/hand headers, street banners, results, prompts
 //! * [`stats`]: session statistics panel (plain input struct)
 //! * [`help`]: command help, listing exactly the working commands
+//! * [`coach`]: post-hand analysis and replay viewer (M-18)
 
+pub mod coach;
 pub mod help;
 pub mod screens;
 pub mod stats;

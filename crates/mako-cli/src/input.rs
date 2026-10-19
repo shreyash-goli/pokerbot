@@ -75,16 +75,33 @@ pub enum BetweenHands {
     Stats,
     Help,
     Quit,
+    /// Review a hand: the last one, or saved hand `n`.
+    Analysis(Option<u64>),
+    /// Step through a hand: the last one, or saved hand `n`.
+    Replay(Option<u64>),
     Invalid,
 }
 
 /// Parses one line typed between hands.
 pub fn parse_between(line: &str) -> BetweenHands {
-    match line.trim().to_ascii_lowercase().as_str() {
-        "" | "c" | "continue" => BetweenHands::Continue,
-        "s" | "stats" => BetweenHands::Stats,
-        "?" | "help" => BetweenHands::Help,
-        "q" | "quit" => BetweenHands::Quit,
+    let lower = line.trim().to_ascii_lowercase();
+    let mut words = lower.split_whitespace();
+    let (head, arg, extra) = (words.next(), words.next(), words.next());
+    let hand = match (arg, extra) {
+        (None, _) => Ok(None),
+        (Some(n), None) => match n.parse::<u64>() {
+            Ok(n) if n >= 1 => Ok(Some(n)),
+            _ => Err(()),
+        },
+        _ => Err(()),
+    };
+    match (head.unwrap_or(""), hand) {
+        ("" | "c" | "continue", Ok(None)) => BetweenHands::Continue,
+        ("s" | "stats", Ok(None)) => BetweenHands::Stats,
+        ("?" | "help", Ok(None)) => BetweenHands::Help,
+        ("q" | "quit", Ok(None)) => BetweenHands::Quit,
+        ("a" | "analysis" | "analyse" | "analyze", Ok(n)) => BetweenHands::Analysis(n),
+        ("r" | "replay", Ok(n)) => BetweenHands::Replay(n),
         _ => BetweenHands::Invalid,
     }
 }
@@ -167,5 +184,15 @@ mod tests {
         assert_eq!(parse_between("stats"), BetweenHands::Stats);
         assert_eq!(parse_between("help"), BetweenHands::Help);
         assert_eq!(parse_between("blah"), BetweenHands::Invalid);
+        assert_eq!(parse_between("a"), BetweenHands::Analysis(None));
+        assert_eq!(
+            parse_between(" Analysis 3 "),
+            BetweenHands::Analysis(Some(3))
+        );
+        assert_eq!(parse_between("replay"), BetweenHands::Replay(None));
+        assert_eq!(parse_between("r 12"), BetweenHands::Replay(Some(12)));
+        for bad in ["replay 0", "replay x", "r 1 2", "a -1", "stats 2", "c 1"] {
+            assert_eq!(parse_between(bad), BetweenHands::Invalid, "{bad:?}");
+        }
     }
 }

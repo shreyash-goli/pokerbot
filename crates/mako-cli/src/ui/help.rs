@@ -22,8 +22,20 @@ pub const IN_HAND_COMMANDS: [(&str, &str, &str); 3] = [
 ];
 
 /// `(command, aliases, description)` accepted between hands.
-pub const BETWEEN_COMMANDS: [(&str, &str, &str); 4] = [
+pub const BETWEEN_COMMANDS: [(&str, &str, &str); 6] = [
     ("continue", "Enter, c", "deal the next hand"),
+    (
+        "analysis",
+        "a",
+        "review the last hand: pot odds, your options, the policy's mix in your \
+         seat, and hindsight after a showdown ('analysis <n>' for saved hand n)",
+    ),
+    (
+        "replay",
+        "r",
+        "step through the last hand (Enter = next, q = stop); 'replay <n>' for \
+         saved hand n",
+    ),
     (
         "stats",
         "s",

@@ -1,6 +1,7 @@
 //! `mako-cli` — the native terminal game (M-05 loop, M-14 policy, M-15 UI).
 //!
 //! * [`args`] — hand-rolled command-line parsing
+//! * [`coach`] — the trained policy as the post-hand coach's mix source (M-18)
 //! * [`opponent`] — selects the opponent agent (CFR policy or untrained
 //!   baseline, both `mako_cfr::infer::Agent`s) and builds its banner
 //! * [`input`] — parsing of player commands against the engine's legal actions
@@ -14,6 +15,7 @@
 //! this crate only ever submits actions taken from the engine's legal list.
 
 pub mod args;
+pub mod coach;
 pub mod game;
 pub mod history;
 pub mod input;

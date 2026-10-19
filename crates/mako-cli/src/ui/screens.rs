@@ -254,8 +254,15 @@ pub fn action_prompt(ui: &Ui) -> String {
 /// The between-hands prompt (no newline).
 pub fn between_prompt(ui: &Ui) -> String {
     let dot = ui.frame().dot;
+    let full = format!(
+        "  {} next hand {dot} analysis {dot} replay {dot} stats {dot} help {dot} quit > ",
+        ui.paint(Role::Accent, "[Enter]")
+    );
+    if visible_width(&full) <= ui.width {
+        return full;
+    }
     format!(
-        "  {} next hand {dot} stats {dot} help {dot} quit > ",
+        "  {} next {dot} a {dot} r {dot} s {dot} ? {dot} q > ",
         ui.paint(Role::Accent, "[Enter]")
     )
 }

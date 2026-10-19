@@ -1,6 +1,5 @@
-//! `mako-analysis` — hand history, session statistics and (later) coaching
-//! and opponent modelling, all from information a player may legitimately
-//! know.
+//! `mako-analysis` — hand history, session statistics and the post-hand
+//! coach, all from information a player may legitimately know.
 //!
 //! * [`history`] — [`history::HandRecord`], built from the human seat's
 //!   viewer-filtered events, and the `mako-history v1` text format (M-17).
@@ -8,7 +7,12 @@
 //!   aggression, showdowns and positional splits from public actions (M-17).
 //! * [`store`] — atomic local persistence and the CLI-facing
 //!   [`store::SessionRecorder`] (M-17).
+//! * [`coach`] — post-hand review separating decision-time information from
+//!   hindsight, and replay frames (M-18).
+//! * [`equity`] — showdown equity vs a random or a shown hand (M-18).
 
+pub mod coach;
+pub mod equity;
 pub mod history;
 pub mod stats;
 pub mod store;

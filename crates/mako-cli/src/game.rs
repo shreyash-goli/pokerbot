@@ -22,9 +22,11 @@ use mako_core::rng::{MakoRng, splitmix64_next};
 use mako_core::rules::{RulesConfig, StackDepth};
 use mako_core::state::{HandState, Match};
 
-use mako_analysis::{SessionRecorder, SessionStats as AnalysisStats};
+use mako_analysis::coach::{self as hand_coach, MixProvider};
+use mako_analysis::{HandRecord, SessionRecorder, SessionStats as AnalysisStats};
 
 use crate::args::AutoPolicy;
+use crate::coach::PolicyCoach;
 use crate::input::{self, BetweenHands, InHand};
 use crate::opponent::{Opponent, OpponentKind};
 use crate::ui::stats::{self, BotSources, HistoryView, SessionStats};
@@ -222,6 +224,96 @@ pub fn wrap_whole_words(text: &str, width: usize, indent: &str) -> Vec<String> {
     out
 }
 
+/// The hand `n` from the saved history, or the last completed hand.
+fn pick_hand(
+    n: Option<u64>,
+    last: Option<&HandRecord>,
+    history: &SessionRecorder,
+) -> Result<HandRecord, String> {
+    match n {
+        None => last
+            .cloned()
+            .ok_or_else(|| "No completed hand to review yet.".to_string()),
+        Some(n) => history
+            .records()
+            .iter()
+            .find(|r| r.hand_number == n)
+            .cloned()
+            .ok_or_else(|| match history.records().last() {
+                Some(r) => format!(
+                    "No saved hand {n}; saved hands are numbered 1 to {}.",
+                    r.hand_number
+                ),
+                None => format!("No saved hand {n}; the history is empty."),
+            }),
+    }
+}
+
+/// The coach screen for `rec`, with the policy's mixes when a trained
+/// policy is loaded.
+pub fn analysis_lines(rec: &HandRecord, opponent: &Opponent, ui: &Ui) -> Vec<String> {
+    let pc = opponent.coach.as_ref().map(PolicyCoach);
+    match hand_coach::review(rec, pc.as_ref().map(|p| p as &dyn MixProvider)) {
+        Ok(r) => crate::ui::coach::analysis(ui, &hand_coach::render(&r)),
+        Err(e) => vec![ui.paint(
+            Role::Warn,
+            &term::fit(
+                &format!("  Cannot analyse hand {}: {e}", rec.hand_number),
+                ui.width,
+            ),
+        )],
+    }
+}
+
+/// Steps through `rec`. Returns `false` if input ended during the replay.
+pub fn run_replay<R: BufRead, W: Write>(
+    rec: &HandRecord,
+    ui: &Ui,
+    input: &mut R,
+    out: &mut W,
+) -> io::Result<bool> {
+    let names = Names {
+        human: rec.human_seat,
+    };
+    let (frames, last) = match hand_coach::replay_frames(rec) {
+        Ok(f) => f,
+        Err(e) => {
+            writeln!(
+                out,
+                "{}",
+                ui.paint(
+                    Role::Warn,
+                    &term::fit(&format!("  Cannot replay: {e}"), ui.width)
+                )
+            )?;
+            return Ok(true);
+        }
+    };
+    write_lines(
+        out,
+        &crate::ui::coach::replay_title(ui, rec.hand_number, frames.len()),
+    )?;
+    for f in &frames {
+        write_lines(
+            out,
+            &crate::ui::coach::replay_frame(ui, f, frames.len(), names),
+        )?;
+        write!(out, "  replay> ")?;
+        out.flush()?;
+        let Some(line) = read_line(input)? else {
+            writeln!(out)?;
+            return Ok(false);
+        };
+        writeln!(out)?;
+        if matches!(line.trim().to_ascii_lowercase().as_str(), "q" | "quit") {
+            writeln!(out, "  Replay stopped.")?;
+            return Ok(true);
+        }
+    }
+    write_lines(out, &crate::ui::coach::replay_end(ui, &last, names))?;
+    Ok(true)
+}
+
 fn write_lines<W: Write>(out: &mut W, lines: &[String]) -> io::Result<()> {
     for l in lines {
         writeln!(out, "{l}")?;
@@ -348,6 +440,7 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
 
     let mut end = EndReason::Completed;
     let mut abandoned = false;
+    let mut last_record: Option<HandRecord> = None;
 
     'session: for i in 0..cfg.hands {
         let mut hand: HandState = m.start_hand(hand_deck(cfg.seed, i)).map_err(io_err)?;
@@ -439,7 +532,10 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
         }
         m.record(&hand);
         let saved = match history.record_hand(&hand, HUMAN, &history_label) {
-            Ok(_) => history.save().map_err(|e| e.to_string()),
+            Ok(rec) => {
+                last_record = Some(rec.clone());
+                history.save().map_err(|e| e.to_string())
+            }
             Err(e) => Err(format!("could not record the hand: {e}")),
         };
         if let Err(e) = saved {
@@ -491,6 +587,31 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
                             )?
                         }
                         BetweenHands::Help => write_lines(out, &help::between_hands(&ui, &label))?,
+                        BetweenHands::Analysis(n) => {
+                            match pick_hand(n, last_record.as_ref(), history) {
+                                Ok(rec) => write_lines(out, &analysis_lines(&rec, opponent, &ui))?,
+                                Err(msg) => writeln!(
+                                    out,
+                                    "{}",
+                                    ui.paint(Role::Warn, &term::fit(&format!("  {msg}"), ui.width))
+                                )?,
+                            }
+                        }
+                        BetweenHands::Replay(n) => {
+                            match pick_hand(n, last_record.as_ref(), history) {
+                                Ok(rec) => {
+                                    if !run_replay(&rec, &ui, r, out)? {
+                                        end = EndReason::InputClosed;
+                                        break 'session;
+                                    }
+                                }
+                                Err(msg) => writeln!(
+                                    out,
+                                    "{}",
+                                    ui.paint(Role::Warn, &term::fit(&format!("  {msg}"), ui.width))
+                                )?,
+                            }
+                        }
                         BetweenHands::Invalid => {
                             let msg = format!("  Invalid input: {:?}", line.trim());
                             writeln!(out, "{}", ui.paint(Role::Warn, &term::fit(&msg, ui.width)))?

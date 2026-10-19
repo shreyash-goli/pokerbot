@@ -84,6 +84,9 @@ pub struct Opponent {
     pub strategy_path: PathBuf,
     /// Checksum of the loaded policy artifact (`None` for the baseline).
     pub checksum: Option<u64>,
+    /// A separate copy of the same policy for the post-hand coach (M-18),
+    /// queried with `strategy()` only; `None` for the baseline.
+    pub coach: Option<CfrAgent>,
 }
 
 impl Opponent {
@@ -158,6 +161,14 @@ fn loud_fallback_banner(depth: StackDepth, path: &Path, why: &LoadFailure) -> Ba
     }
 }
 
+/// Loads a second copy of the policy for the coach; dropped if the file
+/// changed in between (checksum differs).
+fn coach_copy(path: &Path, rules: &RulesConfig, agent: &CfrAgent) -> Option<CfrAgent> {
+    load_cfr(path, rules, 0)
+        .ok()
+        .filter(|c| c.metadata().checksum == agent.metadata().checksum)
+}
+
 /// Picks the opponent. `seed` seeds the agent's own RNG (derive it from the
 /// session seed). `--bot cfr` never falls back: it returns an error.
 pub fn select(
@@ -176,10 +187,12 @@ pub fn select(
             banner: baseline_banner(),
             strategy_path: path.to_path_buf(),
             checksum: None,
+            coach: None,
         }),
         BotKind::Cfr => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
                 checksum: Some(agent.metadata().checksum),
+                coach: coach_copy(path, &rules, &agent),
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -195,6 +208,7 @@ pub fn select(
         BotKind::Auto => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
                 checksum: Some(agent.metadata().checksum),
+                coach: coach_copy(path, &rules, &agent),
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -206,6 +220,7 @@ pub fn select(
                 banner: loud_fallback_banner(depth, path, &why),
                 strategy_path: path.to_path_buf(),
                 checksum: None,
+                coach: None,
             }),
         },
     }
