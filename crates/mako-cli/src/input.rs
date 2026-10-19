@@ -79,12 +79,25 @@ pub enum BetweenHands {
     Analysis(Option<u64>),
     /// Step through a hand: the last one, or saved hand `n`.
     Replay(Option<u64>),
+    /// Show the adaptive opponent's profile of you (M-20).
+    Profile,
+    /// Turn adaptation on or off.
+    Adapt(bool),
+    /// Clear the adaptive opponent's profile.
+    ResetProfile,
     Invalid,
 }
 
 /// Parses one line typed between hands.
 pub fn parse_between(line: &str) -> BetweenHands {
     let lower = line.trim().to_ascii_lowercase();
+    match lower.split_whitespace().collect::<Vec<_>>().as_slice() {
+        ["profile"] | ["adapt"] => return BetweenHands::Profile,
+        ["adapt", "off"] => return BetweenHands::Adapt(false),
+        ["adapt", "on"] => return BetweenHands::Adapt(true),
+        ["reset-profile"] => return BetweenHands::ResetProfile,
+        _ => {}
+    }
     let mut words = lower.split_whitespace();
     let (head, arg, extra) = (words.next(), words.next(), words.next());
     let hand = match (arg, extra) {
@@ -191,6 +204,11 @@ mod tests {
         );
         assert_eq!(parse_between("replay"), BetweenHands::Replay(None));
         assert_eq!(parse_between("r 12"), BetweenHands::Replay(Some(12)));
+        assert_eq!(parse_between("profile"), BetweenHands::Profile);
+        assert_eq!(parse_between("Adapt  OFF"), BetweenHands::Adapt(false));
+        assert_eq!(parse_between("adapt on"), BetweenHands::Adapt(true));
+        assert_eq!(parse_between("reset-profile"), BetweenHands::ResetProfile);
+        assert_eq!(parse_between("adapt maybe"), BetweenHands::Invalid);
         for bad in ["replay 0", "replay x", "r 1 2", "a -1", "stats 2", "c 1"] {
             assert_eq!(parse_between(bad), BetweenHands::Invalid, "{bad:?}");
         }

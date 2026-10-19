@@ -78,6 +78,8 @@ pub struct Options {
     pub history: HistoryChoice,
     /// `--reset-stats`: delete the saved history file and exit.
     pub reset_stats: bool,
+    /// `--adapt`: experimental adaptive opponent (M-20). Off by default.
+    pub adapt: bool,
 }
 
 impl Options {
@@ -110,6 +112,9 @@ impl Options {
         if let Some(a) = self.auto {
             c.push_str(&format!(" --auto {}", a.name()));
         }
+        if self.adapt {
+            c.push_str(" --adapt");
+        }
         c
     }
 }
@@ -129,6 +134,7 @@ impl Default for Options {
             strategy: None,
             history: HistoryChoice::Default,
             reset_stats: false,
+            adapt: false,
         }
     }
 }
@@ -234,6 +240,9 @@ OPTIONS:
     --no-history          Keep stats in memory only; write nothing
     --reset-stats         Delete the saved hand history (only a Mako history
                           file), print what was deleted, and exit
+    --adapt               EXPERIMENTAL, off by default: the bot conservatively
+                          adapts to your public tendencies (never your cards);
+                          not evaluated as stronger. See 'profile' between hands
     -h, --help            Show this help
     -V, --version         Show the version
 
@@ -285,7 +294,7 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
         };
         match name {
             "--seed" | "--hands" | "--depth" | "--bot" | "--strategy" | "--auto" | "--width"
-            | "--glyphs" | "--fast" | "--reset-stats" => once(match name {
+            | "--glyphs" | "--fast" | "--reset-stats" | "--adapt" => once(match name {
                 "--seed" => "--seed",
                 "--hands" => "--hands",
                 "--depth" => "--depth",
@@ -295,6 +304,7 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
                 "--width" => "--width",
                 "--glyphs" => "--glyphs",
                 "--reset-stats" => "--reset-stats",
+                "--adapt" => "--adapt",
                 _ => "--fast",
             })?,
             "--history" | "--no-history" => once("--history")?,
@@ -335,6 +345,7 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
             }
             "--fast" => opts.fast = true,
             "--reset-stats" => opts.reset_stats = true,
+            "--adapt" => opts.adapt = true,
             "--no-history" => opts.history = HistoryChoice::Disabled,
             "--history" => {
                 let v = take_value("--history", inline, &mut it)?;
@@ -621,6 +632,17 @@ mod tests {
         );
         assert!(parse(&["--history="]).is_err());
         assert!(USAGE.contains("--reset-stats") && USAGE.contains("--no-history"));
+        assert!(!play(&[]).adapt, "adaptation is off by default");
+        assert!(play(&["--adapt"]).adapt);
+        assert_eq!(
+            parse(&["--adapt", "--adapt"]),
+            Err(ArgError::Repeated("--adapt"))
+        );
+        assert!(
+            play(&["--adapt", "--seed", "1"])
+                .replay_command(1, "x")
+                .ends_with(" --adapt")
+        );
     }
 
     #[test]

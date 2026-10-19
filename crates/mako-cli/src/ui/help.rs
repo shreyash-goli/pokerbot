@@ -22,7 +22,7 @@ pub const IN_HAND_COMMANDS: [(&str, &str, &str); 3] = [
 ];
 
 /// `(command, aliases, description)` accepted between hands.
-pub const BETWEEN_COMMANDS: [(&str, &str, &str); 6] = [
+pub const BETWEEN_COMMANDS: [(&str, &str, &str); 9] = [
     ("continue", "Enter, c", "deal the next hand"),
     (
         "analysis",
@@ -40,6 +40,22 @@ pub const BETWEEN_COMMANDS: [(&str, &str, &str); 6] = [
         "stats",
         "s",
         "session and lifetime stats and bot decision sources",
+    ),
+    (
+        "profile",
+        "adapt",
+        "with --adapt: what the experimental adaptive bot has learned from your \
+         public actions, with sample sizes",
+    ),
+    (
+        "adapt off",
+        "adapt on",
+        "with --adapt: switch adaptation off (the fixed policy plays) or back on",
+    ),
+    (
+        "reset-profile",
+        "-",
+        "with --adapt: forget the learned profile",
     ),
     ("help", "?", "show this help"),
     ("quit", "q", "end the session"),
@@ -135,7 +151,7 @@ mod tests {
             }
         }
         for (cmd, alias, _) in BETWEEN_COMMANDS {
-            for word in std::iter::once(cmd).chain(alias.split(", ")) {
+            for word in std::iter::once(cmd).chain(alias.split(", ").filter(|w| *w != "-")) {
                 let word = if word == "Enter" { "" } else { word };
                 assert_ne!(parse_between(word), BetweenHands::Invalid, "{word:?}");
             }

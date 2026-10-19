@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 mako-core = { path = "../mako-core" }
 mako-cfr = { path = "../mako-cfr" }
+mako-analysis = { path = "../mako-analysis" }
 
 [lints]
 workspace = true

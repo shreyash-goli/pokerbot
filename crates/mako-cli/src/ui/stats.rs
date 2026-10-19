@@ -50,6 +50,8 @@ pub struct SessionStats {
     pub sources: BotSources,
     /// Detailed statistics; `None` renders the score panel only.
     pub history: Option<HistoryView>,
+    /// Adaptive-opponent note (M-20); `None` when `--adapt` is off.
+    pub adaptive: Option<String>,
 }
 
 /// The panel lines.
@@ -91,6 +93,13 @@ pub fn render(s: &SessionStats, ui: &Ui) -> Vec<String> {
             .into_iter()
             .map(|l| ui.paint(Role::Dim, &l)),
     );
+    if let Some(a) = &s.adaptive {
+        out.extend(
+            wrap(a, ui.width, "  ", "    ")
+                .into_iter()
+                .map(|l| ui.paint(Role::Warn, &l)),
+        );
+    }
     if let Some(h) = &s.history {
         let l = &h.lifetime.human.overall;
         out.extend(wrap(
@@ -202,6 +211,7 @@ mod tests {
                 fallback: 2,
             },
             history: None,
+            adaptive: None,
         };
         for width in [48, 80, 160] {
             let ui = Ui {
@@ -237,6 +247,7 @@ mod tests {
                 lifetime: AnalysisStats::new(),
                 storage: "not saved (--no-history)".into(),
             }),
+            adaptive: None,
         };
         for width in [48, 80, 160] {
             let ui = Ui {

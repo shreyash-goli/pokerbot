@@ -10,10 +10,13 @@
 //! * [`coach`] — post-hand review separating decision-time information from
 //!   hindsight, and replay frames (M-18).
 //! * [`equity`] — showdown equity vs a random or a shown hand (M-18).
+//! * [`opponent`] — opt-in, experimental opponent tendency model and
+//!   [`opponent::AdaptiveAgent`] (M-20), from public actions only.
 
 pub mod coach;
 pub mod equity;
 pub mod history;
+pub mod opponent;
 pub mod stats;
 pub mod store;
 

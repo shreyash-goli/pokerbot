@@ -17,6 +17,7 @@ use std::io::{self, BufRead, Write};
 
 use mako_core::action::{ActionKind, LegalAction, Seat};
 use mako_core::deck::Deck;
+use mako_core::events::Viewer;
 use mako_core::observation::PlayerObservation;
 use mako_core::rng::{MakoRng, splitmix64_next};
 use mako_core::rules::{RulesConfig, StackDepth};
@@ -42,6 +43,7 @@ pub const BOT: Seat = Seat::One;
 const DOMAIN_DECK: u64 = 0x4445_434B; // "DECK"
 const DOMAIN_BOT: u64 = 0x0042_4F54; // "BOT"
 const DOMAIN_AUTO: u64 = 0x4155_544F; // "AUTO"
+const DOMAIN_ADAPT: u64 = 0x4144_4150; // "ADAP"
 
 /// Derives an independent sub-seed from the session seed.
 pub fn derive_seed(session: u64, domain: u64, index: u64) -> u64 {
@@ -64,6 +66,11 @@ pub fn hand_deck(session: u64, index: u64) -> Deck {
 /// Seed for the opponent agent's sampling RNG (baseline or CFR).
 pub fn bot_seed(session: u64) -> u64 {
     derive_seed(session, DOMAIN_BOT, 0)
+}
+
+/// Seed for the adaptive opponent's own sampling RNG (M-20, `--adapt`).
+pub fn adapt_seed(session: u64) -> u64 {
+    derive_seed(session, DOMAIN_ADAPT, 0)
 }
 
 /// Session parameters.
@@ -194,6 +201,17 @@ fn session_stats(
             _ => BotSources::Untrained { decisions },
         },
         history,
+        adaptive: opponent.adaptive.as_ref().map(|a| {
+            let a = a.borrow();
+            let st = a.adapt_stats();
+            format!(
+                "Adaptive opponent {}: {} of {} bot decisions were shifted away from the \
+                 trained mix (experimental; not evaluated as stronger). 'profile' for details.",
+                if a.is_enabled() { "ON" } else { "OFF" },
+                st.adapted,
+                st.decisions
+            )
+        }),
     }
 }
 
@@ -397,8 +415,8 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
     let bb = rules.big_blind;
     let mut m = Match::new(rules, HUMAN).map_err(io_err)?;
     let mut bot_snapshot = opponent.agent.infer_stats();
-    let label = opponent.agent.label();
-    let history_label = opponent.history_label();
+    let mut label = opponent.agent.label();
+    let mut history_label = opponent.history_label();
     let session_start = history.records().len();
     let pause = |out: &mut W| -> io::Result<()> {
         if !cfg.pace.is_zero() {
@@ -531,6 +549,13 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
             );
         }
         m.record(&hand);
+        if let Some(a) = &opponent.adaptive {
+            // The bot's own view: the human's cards appear only if shown,
+            // and the profile reads no cards at all.
+            let _ = a
+                .borrow_mut()
+                .observe_hand(&hand.events_for(Viewer::Seat(BOT)));
+        }
         let saved = match history.record_hand(&hand, HUMAN, &history_label) {
             Ok(rec) => {
                 last_record = Some(rec.clone());
@@ -610,6 +635,39 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
                                     "{}",
                                     ui.paint(Role::Warn, &term::fit(&format!("  {msg}"), ui.width))
                                 )?,
+                            }
+                        }
+                        BetweenHands::Profile
+                        | BetweenHands::Adapt(_)
+                        | BetweenHands::ResetProfile => {
+                            let lines = match (&opponent.adaptive, input::parse_between(&line)) {
+                                (None, _) => vec![
+                                    "Adaptation is not active. Start mako with --adapt to try the \
+                                     experimental adaptive opponent."
+                                        .to_string(),
+                                ],
+                                (Some(a), BetweenHands::Adapt(on)) => {
+                                    a.borrow_mut().set_enabled(on);
+                                    vec![format!(
+                                        "Adaptation {}.{}",
+                                        if on { "ON" } else { "OFF" },
+                                        if on {
+                                            ""
+                                        } else {
+                                            " The fixed trained policy plays from now on."
+                                        }
+                                    )]
+                                }
+                                (Some(a), BetweenHands::ResetProfile) => {
+                                    a.borrow_mut().reset_profile();
+                                    vec!["Profile cleared: the adaptive opponent forgot your tendencies.".to_string()]
+                                }
+                                (Some(a), _) => a.borrow().diagnostics().into_iter().collect(),
+                            };
+                            label = opponent.agent.label();
+                            history_label = opponent.history_label();
+                            for l in lines {
+                                write_lines(out, &term::wrap(&l, ui.width, "  ", "    "))?;
                             }
                         }
                         BetweenHands::Invalid => {

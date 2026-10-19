@@ -6,13 +6,19 @@
 //! the player, without ambiguity, whether a trained policy or the untrained
 //! baseline is at the table, and why.
 
+use std::cell::RefCell;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use mako_cfr::artifact::ArtifactError;
 use mako_cfr::infer::{Agent, AgentError, BaselineAgent, CfrAgent, short_count};
 use mako_core::rules::{RulesConfig, StackDepth};
+
+use mako_analysis::opponent::{ADAPTIVE_TAG, AdaptConfig, AdaptiveAgent};
+use mako_core::action::Seat;
+use mako_core::observation::PlayerObservation;
 
 use crate::args::BotKind;
 use crate::ui::screens::{Banner, BannerLevel};
@@ -87,6 +93,53 @@ pub struct Opponent {
     /// A separate copy of the same policy for the post-hand coach (M-18),
     /// queried with `strategy()` only; `None` for the baseline.
     pub coach: Option<CfrAgent>,
+    /// The experimental adaptive wrapper (M-20), when `--adapt` is on. The
+    /// same object is also behind `agent`.
+    pub adaptive: Option<SharedAdaptive>,
+}
+
+/// The adaptive agent, shared between the seat (`Opponent::agent`) and the
+/// CLI's `profile` / `adapt` / `reset-profile` commands.
+pub type SharedAdaptive = Rc<RefCell<AdaptiveAgent<dyn Agent>>>;
+
+/// Plays through a [`SharedAdaptive`].
+struct AdaptiveSeat(SharedAdaptive);
+
+impl Agent for AdaptiveSeat {
+    fn label(&self) -> String {
+        self.0.borrow().label()
+    }
+    fn act(&mut self, obs: &PlayerObservation) -> Result<mako_cfr::infer::Decision, AgentError> {
+        self.0.borrow_mut().act(obs)
+    }
+    fn infer_stats(&self) -> Option<mako_cfr::infer::InferStats> {
+        self.0.borrow().infer_stats()
+    }
+}
+
+impl Opponent {
+    /// Wraps the agent in the experimental adaptive layer (M-20), which
+    /// learns from `observed`'s public actions. Adds a banner line.
+    pub fn enable_adaptive(&mut self, observed: Seat, seed: u64) -> Result<(), String> {
+        let base = std::mem::replace(&mut self.agent, Box::new(BaselineAgent::new(0)));
+        let cfg = AdaptConfig {
+            enabled: true,
+            seed,
+            ..AdaptConfig::default()
+        };
+        let shared: SharedAdaptive =
+            Rc::new(RefCell::new(AdaptiveAgent::new(base, observed, cfg)?));
+        self.agent = Box::new(AdaptiveSeat(shared.clone()));
+        self.adaptive = Some(shared);
+        self.banner.lines.push(format!(
+            "ADAPTIVE mode: {ADAPTIVE_TAG}. After {} samples of a statistic it moves at most \
+             {:.0}% of the policy's probability per decision, using only your public actions \
+             (never your cards). Between hands: 'profile', 'adapt off', 'reset-profile'.",
+            cfg.min_samples,
+            100.0 * cfg.max_shift
+        ));
+        Ok(())
+    }
 }
 
 impl Opponent {
@@ -188,11 +241,13 @@ pub fn select(
             strategy_path: path.to_path_buf(),
             checksum: None,
             coach: None,
+            adaptive: None,
         }),
         BotKind::Cfr => match load_cfr(path, &rules, seed) {
             Ok(agent) => Ok(Opponent {
                 checksum: Some(agent.metadata().checksum),
                 coach: coach_copy(path, &rules, &agent),
+                adaptive: None,
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -209,6 +264,7 @@ pub fn select(
             Ok(agent) => Ok(Opponent {
                 checksum: Some(agent.metadata().checksum),
                 coach: coach_copy(path, &rules, &agent),
+                adaptive: None,
                 banner: cfr_banner(&agent, path),
                 agent: Box::new(agent),
                 kind: OpponentKind::Cfr,
@@ -221,6 +277,7 @@ pub fn select(
                 strategy_path: path.to_path_buf(),
                 checksum: None,
                 coach: None,
+                adaptive: None,
             }),
         },
     }

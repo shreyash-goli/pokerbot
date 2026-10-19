@@ -67,6 +67,12 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if opts.adapt {
+        if let Err(e) = opp.enable_adaptive(game::HUMAN, game::adapt_seed(seed)) {
+            eprintln!("mako: error: {e}");
+            return ExitCode::from(2);
+        }
+    }
     let (mut recorder, notices) = history::open(&opts.history, history::default_path);
     let interactive = opts.auto.is_none() && stdout_tty && io::stdin().is_terminal();
     let cfg = SessionConfig {
