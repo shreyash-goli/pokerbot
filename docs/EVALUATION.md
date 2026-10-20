@@ -254,6 +254,14 @@ triggers no rule, and against fixed CFR no rule fired at all. All mirrors
 are exactly 0, and the fallback rate is 0.00% of 420,226 fixed-candidate
 decisions.
 
+*Provenance and reproduction.* The eval seed was pre-registered in
+`docs/PROGRESS.md` (commit 2e35cde) before run B. Run B itself was made
+from the uncommitted config, before that config was committed in 9b47efa.
+After the commit, the committed `configs/eval_adaptive_v2.toml` was run
+once more (2026-11-15, release, 14.2 s). Its JSON report was
+**byte-identical** to run B's. That second run reproduces run B; it is not a
+second independent sample.
+
 #### Run C (2026-11-15): revised rule, seed 2718281829 (post-hoc)
 
 **Post-hoc, same seed that motivated the revision; not an independent
