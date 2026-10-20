@@ -8,6 +8,8 @@
 use mako_analysis::stats::{PlayerStats, SessionStats as AnalysisStats, SplitStats};
 use mako_analysis::stats::{fmt_num, fmt_pct};
 
+use mako_cfr::infer::Difficulty;
+
 use super::term::wrap;
 use super::{Role, Ui, chips_delta};
 
@@ -31,6 +33,10 @@ pub enum BotSources {
         decisions: u64,
         policy: u64,
         fallback: u64,
+        /// Decisions shifted by the adaptive layer (`--adapt`), if active.
+        adapted: Option<u64>,
+        /// The difficulty the policy plays at (M-21).
+        difficulty: Difficulty,
     },
     /// The untrained baseline.
     Untrained { decisions: u64 },
@@ -79,10 +85,19 @@ pub fn render(s: &SessionStats, ui: &Ui) -> Vec<String> {
             decisions,
             policy,
             fallback,
-        } => format!(
-            "Bot decisions in completed hands: {decisions} total, {policy} from policy, \
-             {fallback} explicit fallback (uniform legal, unseen infoset)"
-        ),
+            adapted,
+            difficulty,
+        } => {
+            let adapted = adapted.map_or(String::new(), |a| {
+                format!(" ({a} of all decisions adapted by --adapt, not pure policy)")
+            });
+            format!(
+                "Bot decisions in completed hands: {decisions} total, {policy} from policy, \
+                 {fallback} explicit fallback (uniform legal, unseen infoset){adapted}. \
+                 Difficulty {}.",
+                difficulty.description()
+            )
+        }
         BotSources::Untrained { decisions } => format!(
             "Bot: {} ({decisions} decisions; no trained policy in use)",
             s.opponent
@@ -209,6 +224,8 @@ mod tests {
                 decisions: 9,
                 policy: 7,
                 fallback: 2,
+                adapted: Some(3),
+                difficulty: Difficulty::Balanced,
             },
             history: None,
             adaptive: None,
@@ -229,6 +246,14 @@ mod tests {
             assert!(text.contains("Session: 4 hand(s) completed. You -6 / Bot +6"));
             assert!(text.contains("-0.75 big blinds per hand"));
             assert!(text.contains("7 from policy"));
+            assert!(
+                text.contains("3 of all decisions adapted by --adapt"),
+                "{text}"
+            );
+            assert!(
+                text.contains("Difficulty balanced: policy blended 25%"),
+                "{text}"
+            );
             assert_eq!(render_full(&s, &ui), lines, "no history: same panel");
         }
     }

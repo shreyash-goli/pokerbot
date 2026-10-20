@@ -21,14 +21,16 @@ pub const IN_HAND_COMMANDS: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// `(command, aliases, description)` accepted between hands.
-pub const BETWEEN_COMMANDS: [(&str, &str, &str); 9] = [
+/// `(command, aliases, description)` accepted between hands. An empty
+/// alias means none.
+pub const BETWEEN_COMMANDS: [(&str, &str, &str); 6] = [
     ("continue", "Enter, c", "deal the next hand"),
     (
         "analysis",
         "a",
-        "review the last hand: pot odds, your options, the policy's mix in your \
-         seat, and hindsight after a showdown ('analysis <n>' for saved hand n)",
+        "review the last hand: pot odds, your options, the fixed trained policy's \
+         mix in your seat, and hindsight after a showdown ('analysis <n>' for saved \
+         hand n)",
     ),
     (
         "replay",
@@ -41,37 +43,52 @@ pub const BETWEEN_COMMANDS: [(&str, &str, &str); 9] = [
         "s",
         "session and lifetime stats and bot decision sources",
     ),
-    (
-        "profile",
-        "adapt",
-        "with --adapt: what the experimental adaptive bot has learned from your \
-         public actions, with sample sizes",
-    ),
-    (
-        "adapt off",
-        "adapt on",
-        "with --adapt: switch adaptation off (the fixed policy plays) or back on",
-    ),
-    (
-        "reset-profile",
-        "-",
-        "with --adapt: forget the learned profile",
-    ),
     ("help", "?", "show this help"),
     ("quit", "q", "end the session"),
 ];
 
+/// Between-hands commands of the experimental adaptive opponent; listed
+/// only when `--adapt` is active.
+pub const ADAPT_COMMANDS: [(&str, &str, &str); 4] = [
+    (
+        "profile",
+        "adapt",
+        "what the adaptive bot has learned from your public actions, with \
+         sample sizes",
+    ),
+    (
+        "adapt off",
+        "",
+        "switch adaptation off: the fixed policy plays",
+    ),
+    ("adapt on", "", "switch adaptation back on"),
+    ("reset-profile", "", "forget the learned profile"),
+];
+
 fn command_lines(ui: &Ui, cmds: &[(&str, &str, &str)]) -> Vec<String> {
+    // Column widths from the table itself, so long names stay aligned.
+    let cmd_w = cmds.iter().map(|c| c.0.len()).max().unwrap_or(0);
+    let alias_w = cmds
+        .iter()
+        .map(|c| if c.1.is_empty() { 0 } else { c.1.len() + 2 })
+        .max()
+        .unwrap_or(0);
     let mut out = Vec::new();
     for (cmd, alias, desc) in cmds {
+        let alias = if alias.is_empty() {
+            String::new()
+        } else {
+            format!("({alias})")
+        };
         // Pad the plain text, then colour it, so escapes do not skew columns.
         let head = format!(
-            "    {}{} {:<10} ",
+            "    {}{} {:<alias_w$} ",
             ui.paint(Role::Accent, cmd),
-            " ".repeat(9usize.saturating_sub(cmd.len())),
-            format!("({alias})")
+            " ".repeat(cmd_w - cmd.len()),
+            alias
         );
-        out.extend(wrap(desc, ui.width, &head, &" ".repeat(25)));
+        let cont = " ".repeat(6 + cmd_w + alias_w);
+        out.extend(wrap(desc, ui.width, &head, &cont));
     }
     out
 }
@@ -95,10 +112,18 @@ pub fn in_hand(ui: &Ui, opponent: &str) -> Vec<String> {
     out
 }
 
-/// Help shown between hands.
-pub fn between_hands(ui: &Ui, opponent: &str) -> Vec<String> {
+/// Help shown between hands. The adaptive commands are listed only when
+/// `adapt` (`--adapt`) is active.
+pub fn between_hands(ui: &Ui, opponent: &str, adapt: bool) -> Vec<String> {
     let mut out = vec![ui.paint(Role::Strong, "  Commands between hands:")];
     out.extend(command_lines(ui, &BETWEEN_COMMANDS));
+    if adapt {
+        out.push(ui.paint(
+            Role::Strong,
+            "  --adapt only (experimental adaptive opponent):",
+        ));
+        out.extend(command_lines(ui, &ADAPT_COMMANDS));
+    }
     out.extend(stat_terms(ui));
     out.extend(opponent_modes(ui, opponent));
     out
@@ -125,6 +150,10 @@ fn opponent_modes(ui: &Ui, opponent: &str) -> Vec<String> {
             "Opponent modes (--bot): cfr = a trained CFR artifact (approximate, \
              not GTO); baseline = untrained, random legal; auto = cfr if a valid \
              artifact for this depth loads, otherwise baseline with a warning. \
+             Difficulty (--difficulty, CFR only): challenging = the trained policy \
+             as-is (default); balanced = 75% policy + 25% uniform-random legal; \
+             training = 40% policy + 60% uniform-random legal. These are blends of a \
+             plumbing-grade smoke policy; relative strength is not benchmarked. \
              Playing now: {opponent}."
         ),
         ui.width,
@@ -150,12 +179,41 @@ mod tests {
                 );
             }
         }
-        for (cmd, alias, _) in BETWEEN_COMMANDS {
-            for word in std::iter::once(cmd).chain(alias.split(", ").filter(|w| *w != "-")) {
+        for (cmd, alias, _) in BETWEEN_COMMANDS.iter().chain(&ADAPT_COMMANDS) {
+            let (cmd, alias) = (*cmd, *alias);
+            for word in std::iter::once(cmd).chain(alias.split(", ").filter(|w| !w.is_empty())) {
                 let word = if word == "Enter" { "" } else { word };
                 assert_ne!(parse_between(word), BetweenHands::Invalid, "{word:?}");
             }
         }
+    }
+
+    #[test]
+    fn adapt_commands_only_with_adapt_and_aligned() {
+        let ui = Ui {
+            width: 120,
+            ..Ui::plain()
+        };
+        let off = between_hands(&ui, "x", false).join("\n");
+        assert!(
+            !off.contains("reset-profile") && !off.contains("profile "),
+            "{off}"
+        );
+        let on = between_hands(&ui, "x", true);
+        let text = on.join("\n");
+        assert!(text.contains("--adapt only"));
+        assert!(!text.contains("(-)"), "no placeholder alias");
+        // Descriptions of one table start in the same column.
+        let starts: Vec<usize> = ["deal the next", "show this help", "end the session"]
+            .iter()
+            .map(|d| on.iter().find_map(|l| l.find(d)).unwrap())
+            .collect();
+        assert!(starts.windows(2).all(|w| w[0] == w[1]), "{starts:?}");
+        let adapt_starts: Vec<usize> = ["forget the learned", "switch adaptation back"]
+            .iter()
+            .map(|d| on.iter().find_map(|l| l.find(d)).unwrap())
+            .collect();
+        assert_eq!(adapt_starts[0], adapt_starts[1]);
     }
 
     #[test]
@@ -167,7 +225,8 @@ mod tests {
             };
             for l in in_hand(&ui, "baseline")
                 .iter()
-                .chain(&between_hands(&ui, "x"))
+                .chain(&between_hands(&ui, "x", false))
+                .chain(&between_hands(&ui, "x", true))
             {
                 assert!(visible_width(l) <= width, "{l:?}");
             }

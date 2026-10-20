@@ -181,7 +181,7 @@ fn ui_replay_hint_includes_bot_auto_strategy() {
         "",
     ));
     assert!(
-        out.contains("Replay: mako --seed 5 --hands 1 --depth 20 --bot auto --strategy /nowhere/x.mako --auto random"),
+        out.contains("Replay: mako --seed 5 --hands 1 --depth 20 --bot auto --strategy /nowhere/x.mako --difficulty challenging --auto random"),
         "{out}"
     );
 }

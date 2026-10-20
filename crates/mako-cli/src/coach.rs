@@ -7,23 +7,57 @@
 //! RNG or decision counters.
 
 use mako_analysis::coach::{MixProvider, MixSource, PolicyMix};
-use mako_cfr::infer::{Agent, CfrAgent, DecisionSource};
+use mako_cfr::infer::{Agent, CfrAgent, DecisionSource, Difficulty};
 use mako_core::observation::PlayerObservation;
 
-/// "What the Mako policy would play in your seat."
-pub struct PolicyCoach<'a>(pub &'a CfrAgent);
+/// "What the Mako policy would play in your seat." Always the FIXED
+/// trained mix ([`CfrAgent::policy_strategy`]): never the difficulty blend
+/// (M-21) or the adaptive shift (M-20) the opponent may be playing.
+pub struct PolicyCoach<'a> {
+    pub agent: &'a CfrAgent,
+    /// Whether the opponent is adapting (`--adapt`).
+    pub adapting: bool,
+    /// The difficulty the opponent plays at.
+    pub difficulty: Difficulty,
+}
+
+impl<'a> PolicyCoach<'a> {
+    pub fn new(agent: &'a CfrAgent, adapting: bool, difficulty: Difficulty) -> Self {
+        PolicyCoach {
+            agent,
+            adapting,
+            difficulty,
+        }
+    }
+
+    /// The honest label of the coach's mix.
+    pub fn mix_label(&self) -> String {
+        let mut head = if self.adapting {
+            "fixed trained policy (not adapted, challenging)".to_string()
+        } else {
+            "trained policy (fixed, unadapted, challenging)".to_string()
+        };
+        if self.difficulty != Difficulty::Challenging {
+            head.push_str(&format!(
+                "; the opponent plays the {} blend instead",
+                self.difficulty.name()
+            ));
+        }
+        format!("{head} -- {}", self.agent.label())
+    }
+}
 
 impl MixProvider for PolicyCoach<'_> {
     fn label(&self) -> String {
-        self.0.label()
+        self.mix_label()
     }
 
     fn checksum(&self) -> Option<u64> {
-        Some(self.0.metadata().checksum)
+        Some(self.agent.metadata().checksum)
     }
 
     fn mix(&self, obs: &PlayerObservation) -> Result<PolicyMix, String> {
-        let (probs, source) = self.0.strategy(obs).map_err(|e| e.to_string())?;
+        let (probs, source) = self.agent.policy_strategy(obs).map_err(|e| e.to_string())?;
         Ok(PolicyMix {
             probs,
             source: match source {

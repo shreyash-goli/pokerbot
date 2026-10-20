@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use mako_cfr::artifact::ArtifactError;
-use mako_cfr::infer::{Agent, AgentError, BaselineAgent, CfrAgent, short_count};
+use mako_cfr::infer::{
+    Agent, AgentError, BaselineAgent, CfrAgent, DIFFICULTY_NOTE, Difficulty, short_count,
+};
 use mako_core::rules::{RulesConfig, StackDepth};
 
 use mako_analysis::opponent::{ADAPTIVE_TAG, AdaptConfig, AdaptiveAgent};
@@ -96,6 +98,8 @@ pub struct Opponent {
     /// The experimental adaptive wrapper (M-20), when `--adapt` is on. The
     /// same object is also behind `agent`.
     pub adaptive: Option<SharedAdaptive>,
+    /// Difficulty of the CFR policy (M-21); `None` for the baseline.
+    pub difficulty: Option<Difficulty>,
 }
 
 /// The adaptive agent, shared between the seat (`Opponent::agent`) and the
@@ -131,6 +135,12 @@ impl Opponent {
             Rc::new(RefCell::new(AdaptiveAgent::new(base, observed, cfg)?));
         self.agent = Box::new(AdaptiveSeat(shared.clone()));
         self.adaptive = Some(shared);
+        if let Some(d) = self.difficulty {
+            self.banner.lines.push(format!(
+                "Order: trained policy -> difficulty blend ({}) -> adaptive shift.",
+                d.name()
+            ));
+        }
         self.banner.lines.push(format!(
             "ADAPTIVE mode: {ADAPTIVE_TAG}. After {} samples of a statistic it moves at most \
              {:.0}% of the policy's probability per decision, using only your public actions \
@@ -222,19 +232,68 @@ fn coach_copy(path: &Path, rules: &RulesConfig, agent: &CfrAgent) -> Option<CfrA
         .filter(|c| c.metadata().checksum == agent.metadata().checksum)
 }
 
-/// Picks the opponent. `seed` seeds the agent's own RNG (derive it from the
-/// session seed). `--bot cfr` never falls back: it returns an error.
+/// [`select_with`] at the default difficulty (challenging).
 pub fn select(
     kind: BotKind,
     strategy: Option<&Path>,
     depth: StackDepth,
     seed: u64,
 ) -> Result<Opponent, SelectError> {
+    select_with(kind, strategy, depth, seed, Difficulty::Challenging)
+}
+
+fn difficulty_line(d: Difficulty) -> String {
+    format!("Difficulty: {}. Note: {DIFFICULTY_NOTE}.", d.description())
+}
+
+/// Wraps a loaded policy at `difficulty`.
+fn cfr_opponent(
+    agent: CfrAgent,
+    path: &Path,
+    rules: &RulesConfig,
+    difficulty: Difficulty,
+) -> Opponent {
+    let coach = coach_copy(path, rules, &agent);
+    let agent = agent.with_difficulty(difficulty);
+    let mut banner = cfr_banner(&agent, path);
+    banner.lines.insert(1, difficulty_line(difficulty));
+    Opponent {
+        checksum: Some(agent.metadata().checksum),
+        coach,
+        adaptive: None,
+        banner,
+        agent: Box::new(agent),
+        kind: OpponentKind::Cfr,
+        strategy_path: path.to_path_buf(),
+        difficulty: Some(difficulty),
+    }
+}
+
+/// Picks the opponent. `seed` seeds the agent's own RNG (derive it from the
+/// session seed). `--bot cfr` never falls back: it returns an error.
+/// `difficulty` applies to the CFR policy only; the baseline is unaffected
+/// (a non-default difficulty with the baseline is noted in the banner).
+pub fn select_with(
+    kind: BotKind,
+    strategy: Option<&Path>,
+    depth: StackDepth,
+    seed: u64,
+    difficulty: Difficulty,
+) -> Result<Opponent, SelectError> {
     let rules = RulesConfig::standard(depth);
     let default_path = default_strategy_path(depth);
     let path = strategy.unwrap_or(&default_path);
+    let not_applied = |mut o: Opponent| {
+        if difficulty != Difficulty::Challenging {
+            o.banner.lines.push(format!(
+                "--difficulty {} does not apply: the untrained baseline is unaffected.",
+                difficulty.name()
+            ));
+        }
+        o
+    };
     match kind {
-        BotKind::Baseline => Ok(Opponent {
+        BotKind::Baseline => Ok(not_applied(Opponent {
             agent: Box::new(BaselineAgent::new(seed)),
             kind: OpponentKind::Baseline,
             banner: baseline_banner(),
@@ -242,17 +301,10 @@ pub fn select(
             checksum: None,
             coach: None,
             adaptive: None,
-        }),
+            difficulty: None,
+        })),
         BotKind::Cfr => match load_cfr(path, &rules, seed) {
-            Ok(agent) => Ok(Opponent {
-                checksum: Some(agent.metadata().checksum),
-                coach: coach_copy(path, &rules, &agent),
-                adaptive: None,
-                banner: cfr_banner(&agent, path),
-                agent: Box::new(agent),
-                kind: OpponentKind::Cfr,
-                strategy_path: path.to_path_buf(),
-            }),
+            Ok(agent) => Ok(cfr_opponent(agent, path, &rules, difficulty)),
             Err(why) => Err(SelectError(format!(
                 "--bot cfr: no trained policy for {}BB at {} ({why}). \
                  {TRAIN_HINT}, or use --bot baseline.",
@@ -261,16 +313,8 @@ pub fn select(
             ))),
         },
         BotKind::Auto => match load_cfr(path, &rules, seed) {
-            Ok(agent) => Ok(Opponent {
-                checksum: Some(agent.metadata().checksum),
-                coach: coach_copy(path, &rules, &agent),
-                adaptive: None,
-                banner: cfr_banner(&agent, path),
-                agent: Box::new(agent),
-                kind: OpponentKind::Cfr,
-                strategy_path: path.to_path_buf(),
-            }),
-            Err(why) => Ok(Opponent {
+            Ok(agent) => Ok(cfr_opponent(agent, path, &rules, difficulty)),
+            Err(why) => Ok(not_applied(Opponent {
                 agent: Box::new(BaselineAgent::new(seed)),
                 kind: OpponentKind::BaselineFallback,
                 banner: loud_fallback_banner(depth, path, &why),
@@ -278,7 +322,8 @@ pub fn select(
                 checksum: None,
                 coach: None,
                 adaptive: None,
-            }),
+                difficulty: None,
+            })),
         },
     }
 }

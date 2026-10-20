@@ -26,6 +26,10 @@ cargo run -p mako-cli -- --depth 20 --hands 3 --seed 7
 | `--no-color` | Same as `--color never`. |
 | `--glyphs <auto\|unicode\|ascii>` | Suit symbols and box frames, or plain ASCII (default `auto`). |
 | `--width <48..240>` | Layout width in columns (default: `COLUMNS`, else 80). |
+| `--difficulty <training\|balanced\|challenging>` | How the CFR bot's trained mix is blended with uniform-random legal play (default `challenging` = as-is); see [Difficulty](#difficulty). |
+| `--adapt` | Experimental, off by default: the bot conservatively adapts to your public tendencies (never your cards); not evaluated as stronger. |
+| `--history <path>` / `--no-history` | Where completed hands are saved (default `$MAKO_HOME/session-history.txt`, else `~/.mako/`), or keep stats in memory only. |
+| `--reset-stats` | Delete the saved Mako history file and exit. |
 | `--fast` | No pauses between bot actions. |
 | `-h`, `--help` / `-V`, `--version` | Usage / version. |
 
@@ -53,6 +57,41 @@ table and in `help`; there is never a silent substitution.
   reason (missing / wrong depth / corrupt) and how to train one
   (`scripts/train_smoke.sh`, currently 20BB only).
 
+## Difficulty
+
+`--difficulty` applies to the CFR policy only; with the baseline it is
+accepted, does nothing, and the banner says so. Every mode samples, with a
+seeded RNG, from an explicit blend of the trained mix `p` with the uniform
+distribution over the **legal** actions (`n` of them), share `λ`:
+
+```
+p'(a) = (1 − λ) · p(a) + λ / n      (legal a; illegal actions stay 0)
+```
+
+| Mode | λ | Label |
+|---|---|---|
+| `challenging` (default) | 0 | `challenging: trained smoke policy as-is` |
+| `balanced` | 1/4 | `balanced: policy blended 25% with uniform-random legal play` |
+| `training` | 3/5 | `training: policy blended 60% with uniform-random legal play` |
+
+Sampling stays integer (weights `(b − a)·q·n + a·65535` for `λ = a/b` and
+quantized `q`), so a seed reproduces the same choices on every platform.
+`challenging` keeps the original weights and is bit-identical to the
+untransformed agent. Unseen situations still use the explicit uniform
+fallback, counted in `stats`. The banner and `stats` show the difficulty,
+and the replay hint includes `--difficulty`.
+
+These modes are blends of a plumbing-grade smoke policy; relative strength
+has not been benchmarked unless shown by `mako-eval`. "Training" means
+"more random", not "easier by a measured amount".
+
+With `--adapt`, the order is: trained policy → difficulty blend → adaptive
+shift. `stats` then reports how many decisions were adapted, so they are
+not presented as pure policy. The coach (`analysis`) always shows the
+**fixed** trained mix, labelled `trained policy (fixed, unadapted,
+challenging)` (`fixed trained policy (not adapted, challenging)` with
+`--adapt`), and says when the opponent plays a blend instead.
+
 Bots only ever see their own observation: their own cards, the revealed
 board and the public action history. Your cards stay yours, and the bot's
 cards are shown face down (`[##]` / `[▓▓]`) until a hand reaches showdown;
@@ -71,9 +110,13 @@ During your turn (`Your action>`):
 | `stats` (`s`) | session score and where the bot's decisions came from |
 | `quit` (`q`) | end the session; the unfinished hand is abandoned and not scored |
 
-Between hands: `Enter` / `continue` (`c`) deals the next hand; `stats`
-(`s`), `help` (`?`) and `quit` (`q`) as above. End of input (Ctrl-D or the
-end of a piped script) ends the session cleanly.
+Between hands: `Enter` / `continue` (`c`) deals the next hand;
+`analysis` (`a`, or `analysis <n>`) reviews the last or a saved hand with
+the fixed policy's mix; `replay` (`r`, or `replay <n>`) steps through it;
+`stats` (`s`), `help` (`?`) and `quit` (`q`) as above. With `--adapt` only,
+help also lists `profile` (`adapt`), `adapt off`, `adapt on` and
+`reset-profile`. End of input (Ctrl-D or the end of a piped script) ends
+the session cleanly.
 
 Only the actions listed under **Options** are legal. Anything else is
 rejected with a message and the game state does not change. The help text
@@ -127,7 +170,7 @@ same inputs give an identical transcript (given the same artifact):
 
 ```
 Replay: mako --seed 7 --hands 3 --depth 20 --bot auto --strategy \
-    artifacts/smoke_20bb.mako --auto checkcall
+    artifacts/smoke_20bb.mako --difficulty challenging --auto checkcall
 ```
 
 Long commands wrap with a trailing `\`, so they paste into a shell as-is.
@@ -157,8 +200,6 @@ showdown, a fold and the session header, at 80 and 120 columns, in plain
 and 256-colour modes, live in `crates/mako-cli/tests/snapshots/`
 (regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p mako-cli --test snapshots`).
 
-## Not included yet
+## Not included
 
-Between-hand analysis/coaching (M-18) and persistent statistics (M-17) are
-separate tasks; `mako` does not offer `analysis` or `restart` commands
-until they work.
+`mako` has no `restart` command; everything listed in `help` works.

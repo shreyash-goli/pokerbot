@@ -200,6 +200,118 @@ fn uniform_weights(mask: LegalMask) -> [u64; NUM_SLOTS] {
     std::array::from_fn(|i| u64::from(is_legal(mask, i)))
 }
 
+/// Note shown with every difficulty label.
+pub const DIFFICULTY_NOTE: &str = "difficulty modes are blends of a plumbing-grade smoke policy; \
+     relative strength has not been benchmarked unless shown by mako-eval";
+
+/// How a [`CfrAgent`] transforms the trained distribution before sampling.
+///
+/// Every mode is an explicit blend with the uniform distribution over the
+/// **legal** actions `L` (`n = |L|`), with share `λ`:
+///
+/// ```text
+/// p'(a) = (1 − λ) · p(a) + λ / n     for a in L,   p'(a) = 0 otherwise
+/// ```
+///
+/// | mode | λ | meaning |
+/// |---|---|---|
+/// | `Challenging` (default) | 0 | the trained average strategy unchanged |
+/// | `Balanced` | 1/4 | 75% policy, 25% uniform-random legal |
+/// | `Training` | 3/5 | 40% policy, 60% uniform-random legal |
+///
+/// `p` is the artifact's quantized mix `q / 65535`. Sampling stays integer:
+/// with `λ = a/b` the slot weights are `(b − a)·q(i)·n + a·65535` (legal
+/// slots), which are exactly proportional to `p'`. `Challenging` keeps the
+/// original weights `q`, so it is bit-identical to an untransformed agent.
+/// Explicit fallbacks (unseen infosets) are uniform already and unchanged.
+/// No mode adds rules or uses any information beyond the observation.
+/// Relative strength of the modes is not claimed; see [`DIFFICULTY_NOTE`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Difficulty {
+    /// 40% policy, 60% uniform-random legal play.
+    Training,
+    /// 75% policy, 25% uniform-random legal play.
+    Balanced,
+    /// The trained policy as-is.
+    #[default]
+    Challenging,
+}
+
+impl Difficulty {
+    /// All modes, from most to least uniform.
+    pub const ALL: [Difficulty; 3] = [
+        Difficulty::Training,
+        Difficulty::Balanced,
+        Difficulty::Challenging,
+    ];
+
+    /// Name used on the command line.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Difficulty::Training => "training",
+            Difficulty::Balanced => "balanced",
+            Difficulty::Challenging => "challenging",
+        }
+    }
+
+    /// Parses a [`Difficulty::name`].
+    pub fn parse(s: &str) -> Option<Difficulty> {
+        Difficulty::ALL
+            .into_iter()
+            .find(|d| d.name().eq_ignore_ascii_case(s))
+    }
+
+    /// The uniform share `λ = a / b` as `(a, b)`.
+    pub const fn uniform_share(self) -> (u64, u64) {
+        match self {
+            Difficulty::Training => (3, 5),
+            Difficulty::Balanced => (1, 4),
+            Difficulty::Challenging => (0, 1),
+        }
+    }
+
+    /// Honest one-line description.
+    pub const fn description(self) -> &'static str {
+        match self {
+            Difficulty::Training => "training: policy blended 60% with uniform-random legal play",
+            Difficulty::Balanced => "balanced: policy blended 25% with uniform-random legal play",
+            Difficulty::Challenging => "challenging: trained smoke policy as-is",
+        }
+    }
+
+    /// Integer sampling weights for policy weights `q` (legal slots of
+    /// `mask`), per the formula above.
+    pub fn transform_weights(self, q: &[u64; NUM_SLOTS], mask: LegalMask) -> [u64; NUM_SLOTS] {
+        let (a, b) = self.uniform_share();
+        if a == 0 {
+            return *q;
+        }
+        let n = u64::from((mask & crate::regret::FULL_MASK).count_ones());
+        std::array::from_fn(|i| {
+            if is_legal(mask, i) {
+                (b - a) * q[i] * n + a * u64::from(PROB_SCALE)
+            } else {
+                0
+            }
+        })
+    }
+
+    /// The same transform on a probability vector (for callers holding
+    /// floats, e.g. evaluation): `(1 − λ)·p + λ/n` on legal slots.
+    pub fn transform(self, p: &[f64; NUM_SLOTS], mask: LegalMask) -> [f64; NUM_SLOTS] {
+        let (a, b) = self.uniform_share();
+        let lambda = a as f64 / b as f64;
+        let n = f64::from((mask & crate::regret::FULL_MASK).count_ones());
+        std::array::from_fn(|i| {
+            if is_legal(mask, i) {
+                (1.0 - lambda) * p[i] + lambda / n
+            } else {
+                0.0
+            }
+        })
+    }
+}
+
 /// Provenance of a loaded artifact.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentMetadata {
@@ -238,6 +350,7 @@ pub struct CfrAgent {
     rng: MakoRng,
     stats: InferStats,
     metadata: AgentMetadata,
+    difficulty: Difficulty,
 }
 
 /// Internal resolution of one decision.
@@ -285,10 +398,48 @@ impl CfrAgent {
             rng: MakoRng::seed_from_u64(seed),
             stats: InferStats::default(),
             metadata,
+            difficulty: Difficulty::Challenging,
         })
     }
 
+    /// The same agent playing at `difficulty` (see [`Difficulty`]).
+    pub fn with_difficulty(mut self, difficulty: Difficulty) -> Self {
+        self.difficulty = difficulty;
+        self
+    }
+
+    /// The difficulty this agent plays at.
+    pub fn difficulty(&self) -> Difficulty {
+        self.difficulty
+    }
+
+    /// Weights actually sampled from: the policy weights transformed by the
+    /// difficulty; fallbacks unchanged.
     fn resolve(&self, obs: &PlayerObservation) -> Result<Resolved, AgentError> {
+        let r = self.resolve_policy(obs)?;
+        if r.source != DecisionSource::Policy || self.difficulty == Difficulty::Challenging {
+            return Ok(r);
+        }
+        let mask = decision_mask(obs)?;
+        Ok(Resolved {
+            weights: self.difficulty.transform_weights(&r.weights, mask),
+            source: r.source,
+        })
+    }
+
+    /// Distribution of resolved weights: `q / 65535` for the untransformed
+    /// policy, otherwise normalized weights.
+    fn distribution(&self, r: &Resolved, transformed: bool) -> [f64; NUM_SLOTS] {
+        if r.source == DecisionSource::Policy
+            && (!transformed || self.difficulty == Difficulty::Challenging)
+        {
+            r.weights.map(|w| w as f64 / f64::from(PROB_SCALE))
+        } else {
+            distribution_of(&r.weights)
+        }
+    }
+
+    fn resolve_policy(&self, obs: &PlayerObservation) -> Result<Resolved, AgentError> {
         let runtime = decision_mask(obs)?;
         let key = InfoKey::from_observation(obs, &self.abstraction)?;
         let Some(entry) = self.policy.lookup_bytes(&key.to_bytes()) else {
@@ -322,19 +473,25 @@ impl CfrAgent {
         })
     }
 
-    /// The distribution the agent would sample from, without sampling or
-    /// counting. For a stored infoset it equals the artifact's
-    /// probabilities (`q / 65535`).
+    /// The distribution the agent would sample from at its difficulty,
+    /// without sampling or counting. At `Challenging`, for a stored infoset
+    /// it equals the artifact's probabilities (`q / 65535`).
     pub fn strategy(
         &self,
         obs: &PlayerObservation,
     ) -> Result<([f64; NUM_SLOTS], DecisionSource), AgentError> {
         let r = self.resolve(obs)?;
-        let dist = match r.source {
-            DecisionSource::Policy => r.weights.map(|w| w as f64 / f64::from(PROB_SCALE)),
-            _ => distribution_of(&r.weights),
-        };
-        Ok((dist, r.source))
+        Ok((self.distribution(&r, true), r.source))
+    }
+
+    /// The fixed trained mix (`q / 65535`, or the explicit fallback),
+    /// ignoring the difficulty. For the coach.
+    pub fn policy_strategy(
+        &self,
+        obs: &PlayerObservation,
+    ) -> Result<([f64; NUM_SLOTS], DecisionSource), AgentError> {
+        let r = self.resolve_policy(obs)?;
+        Ok((self.distribution(&r, false), r.source))
     }
 
     /// Counters since construction.
@@ -356,20 +513,22 @@ impl CfrAgent {
 impl Agent for CfrAgent {
     fn label(&self) -> String {
         let m = &self.metadata;
-        format!(
+        let base = format!(
             "cfr {}BB ({} it): {}",
             m.depth_bb(),
             short_count(m.iterations),
             m.label
-        )
+        );
+        match self.difficulty {
+            // The default keeps the original label: it is the policy as-is.
+            Difficulty::Challenging => base,
+            d => format!("{base} | difficulty {}", d.description()),
+        }
     }
 
     fn act(&mut self, obs: &PlayerObservation) -> Result<Decision, AgentError> {
         let r = self.resolve(obs)?;
-        let dist = match r.source {
-            DecisionSource::Policy => r.weights.map(|w| w as f64 / f64::from(PROB_SCALE)),
-            _ => distribution_of(&r.weights),
-        };
+        let dist = self.distribution(&r, true);
         let slot = sample_weighted(&mut self.rng, &r.weights);
         self.stats.decisions += 1;
         match r.source {
@@ -476,6 +635,35 @@ impl Agent for BaselineAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn difficulty_integer_weights_match_the_float_formula() {
+        // A legal mask of fold/call/pot/all-in and a skewed quantized mix.
+        let mask: LegalMask = 0b11_0101;
+        let q: [u64; NUM_SLOTS] = [60_000, 0, 5_000, 0, 535, 0];
+        let p = q.map(|w| w as f64 / f64::from(PROB_SCALE));
+        for d in Difficulty::ALL {
+            let w = d.transform_weights(&q, mask);
+            let total: u64 = w.iter().sum();
+            let from_weights = w.map(|x| x as f64 / total as f64);
+            let from_formula = d.transform(&p, mask);
+            for i in 0..NUM_SLOTS {
+                assert!(
+                    (from_weights[i] - from_formula[i]).abs() < 1e-12,
+                    "{d:?} slot {i}"
+                );
+                if !is_legal(mask, i) {
+                    assert_eq!(w[i], 0);
+                } else if d != Difficulty::Challenging {
+                    assert!(w[i] > 0, "blends give every legal action mass");
+                }
+            }
+        }
+        assert_eq!(Difficulty::Challenging.transform_weights(&q, mask), q);
+        assert_eq!(Difficulty::default(), Difficulty::Challenging);
+        assert_eq!(Difficulty::parse("BALANCED"), Some(Difficulty::Balanced));
+        assert_eq!(Difficulty::parse("easy"), None);
+    }
 
     #[test]
     fn short_counts() {

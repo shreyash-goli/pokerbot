@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use mako_cfr::infer::Difficulty;
 use mako_core::rules::StackDepth;
 
 use crate::ui::term::{ColorChoice, ColorMode, GlyphChoice, Glyphs, MAX_WIDTH, MIN_WIDTH};
@@ -80,6 +81,9 @@ pub struct Options {
     pub reset_stats: bool,
     /// `--adapt`: experimental adaptive opponent (M-20). Off by default.
     pub adapt: bool,
+    /// `--difficulty` (M-21): how the CFR policy's mix is blended with
+    /// uniform-random legal play. Default challenging (policy as-is).
+    pub difficulty: Difficulty,
 }
 
 impl Options {
@@ -108,6 +112,7 @@ impl Options {
             } else {
                 c.push_str(&format!(" --strategy {strategy}"));
             }
+            c.push_str(&format!(" --difficulty {}", self.difficulty.name()));
         }
         if let Some(a) = self.auto {
             c.push_str(&format!(" --auto {}", a.name()));
@@ -135,6 +140,7 @@ impl Default for Options {
             history: HistoryChoice::Default,
             reset_stats: false,
             adapt: false,
+            difficulty: Difficulty::Challenging,
         }
     }
 }
@@ -176,6 +182,7 @@ impl fmt::Display for ArgError {
                     "--width" => " (expected 48..=240)",
                     "--color" => " (expected auto, never, 16, 256 or truecolor)",
                     "--glyphs" => " (expected auto, unicode or ascii)",
+                    "--difficulty" => " (expected training, balanced or challenging)",
                     "--seed" => " (expected an unsigned 64-bit integer)",
                     _ => "",
                 };
@@ -240,6 +247,12 @@ OPTIONS:
     --no-history          Keep stats in memory only; write nothing
     --reset-stats         Delete the saved hand history (only a Mako history
                           file), print what was deleted, and exit
+    --difficulty <training|balanced|challenging>
+                          CFR bot only (default challenging = trained policy
+                          as-is). balanced = 75% policy + 25% uniform-random
+                          legal; training = 40% policy + 60% uniform-random
+                          legal. Blends of a smoke policy; relative strength
+                          not benchmarked. The baseline is unaffected
     --adapt               EXPERIMENTAL, off by default: the bot conservatively
                           adapts to your public tendencies (never your cards);
                           not evaluated as stronger. See 'profile' between hands
@@ -294,19 +307,22 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
         };
         match name {
             "--seed" | "--hands" | "--depth" | "--bot" | "--strategy" | "--auto" | "--width"
-            | "--glyphs" | "--fast" | "--reset-stats" | "--adapt" => once(match name {
-                "--seed" => "--seed",
-                "--hands" => "--hands",
-                "--depth" => "--depth",
-                "--bot" => "--bot",
-                "--strategy" => "--strategy",
-                "--auto" => "--auto",
-                "--width" => "--width",
-                "--glyphs" => "--glyphs",
-                "--reset-stats" => "--reset-stats",
-                "--adapt" => "--adapt",
-                _ => "--fast",
-            })?,
+            | "--glyphs" | "--fast" | "--reset-stats" | "--adapt" | "--difficulty" => {
+                once(match name {
+                    "--seed" => "--seed",
+                    "--hands" => "--hands",
+                    "--depth" => "--depth",
+                    "--bot" => "--bot",
+                    "--strategy" => "--strategy",
+                    "--auto" => "--auto",
+                    "--width" => "--width",
+                    "--glyphs" => "--glyphs",
+                    "--reset-stats" => "--reset-stats",
+                    "--adapt" => "--adapt",
+                    "--difficulty" => "--difficulty",
+                    _ => "--fast",
+                })?
+            }
             "--history" | "--no-history" => once("--history")?,
             "--color" | "--colour" | "--no-color" | "--no-colour" => once("--color")?,
             _ => {}
@@ -346,6 +362,10 @@ pub fn parse<S: AsRef<str>>(args: &[S]) -> Result<Command, ArgError> {
             "--fast" => opts.fast = true,
             "--reset-stats" => opts.reset_stats = true,
             "--adapt" => opts.adapt = true,
+            "--difficulty" => {
+                let v = take_value("--difficulty", inline, &mut it)?;
+                opts.difficulty = Difficulty::parse(v).ok_or_else(|| invalid("--difficulty", v))?;
+            }
             "--no-history" => opts.history = HistoryChoice::Disabled,
             "--history" => {
                 let v = take_value("--history", inline, &mut it)?;
@@ -577,6 +597,43 @@ mod tests {
     }
 
     #[test]
+    fn difficulty_flag_parses_rejects_and_replays() {
+        assert_eq!(play(&[]).difficulty, Difficulty::Challenging);
+        for d in Difficulty::ALL {
+            let o = play(&["--difficulty", d.name(), "--bot", "cfr"]);
+            assert_eq!(o.difficulty, d);
+            assert!(
+                o.replay_command(1, "p.mako")
+                    .contains(&format!("--difficulty {}", d.name()))
+            );
+        }
+        assert_eq!(
+            play(&["--difficulty=Training"]).difficulty,
+            Difficulty::Training
+        );
+        assert!(matches!(
+            parse(&["--difficulty", "easy"]),
+            Err(ArgError::InvalidValue {
+                flag: "--difficulty",
+                ..
+            })
+        ));
+        assert_eq!(
+            parse(&["--difficulty"]),
+            Err(ArgError::MissingValue("--difficulty"))
+        );
+        assert_eq!(
+            parse(&["--difficulty", "training", "--difficulty", "balanced"]),
+            Err(ArgError::Repeated("--difficulty"))
+        );
+        let b = play(&["--bot", "baseline", "--difficulty", "training"]);
+        assert!(
+            !b.replay_command(1, "x").contains("--difficulty"),
+            "baseline is unaffected"
+        );
+    }
+
+    #[test]
     fn replay_command_includes_bot_strategy_auto() {
         let o = play(&[
             "--hands",
@@ -590,7 +647,7 @@ mod tests {
         ]);
         assert_eq!(
             o.replay_command(7, "artifacts/smoke_50bb.mako"),
-            "mako --seed 7 --hands 3 --depth 50 --bot cfr --strategy artifacts/smoke_50bb.mako --auto checkcall"
+            "mako --seed 7 --hands 3 --depth 50 --bot cfr --strategy artifacts/smoke_50bb.mako --difficulty challenging --auto checkcall"
         );
         let b = play(&["--bot", "baseline"]);
         assert_eq!(
@@ -600,7 +657,7 @@ mod tests {
         assert!(
             play(&[])
                 .replay_command(1, "a b.mako")
-                .ends_with("--strategy 'a b.mako'")
+                .ends_with("--strategy 'a b.mako' --difficulty challenging")
         );
     }
 

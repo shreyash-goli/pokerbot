@@ -177,14 +177,35 @@ fn history_view(rec: &SessionRecorder, session_start: usize) -> HistoryView {
     }
 }
 
+/// Bot counters taken at the end of the last completed hand.
+#[derive(Clone, Copy, Debug, Default)]
+struct BotSnapshot {
+    stats: Option<InferStats>,
+    /// Decisions shifted by `--adapt`.
+    adapted: Option<u64>,
+}
+
+impl BotSnapshot {
+    fn take(opponent: &Opponent) -> BotSnapshot {
+        BotSnapshot {
+            stats: opponent.agent.infer_stats(),
+            adapted: opponent
+                .adaptive
+                .as_ref()
+                .map(|a| a.borrow().adapt_stats().adapted),
+        }
+    }
+}
+
 fn session_stats(
     m: &Match,
     opponent: &Opponent,
-    bot: Option<InferStats>,
+    snap: BotSnapshot,
     bb: u32,
     history: Option<HistoryView>,
 ) -> SessionStats {
     let s = m.score();
+    let bot = snap.stats;
     let decisions = bot.map_or(0, |b| b.decisions);
     SessionStats {
         hands_completed: m.hands_played(),
@@ -197,6 +218,8 @@ fn session_stats(
                 decisions: b.decisions,
                 policy: b.policy_hits,
                 fallback: b.fallbacks,
+                adapted: snap.adapted,
+                difficulty: opponent.difficulty.unwrap_or_default(),
             },
             _ => BotSources::Untrained { decisions },
         },
@@ -270,7 +293,13 @@ fn pick_hand(
 /// The coach screen for `rec`, with the policy's mixes when a trained
 /// policy is loaded.
 pub fn analysis_lines(rec: &HandRecord, opponent: &Opponent, ui: &Ui) -> Vec<String> {
-    let pc = opponent.coach.as_ref().map(PolicyCoach);
+    let pc = opponent.coach.as_ref().map(|c| {
+        PolicyCoach::new(
+            c,
+            opponent.adaptive.is_some(),
+            opponent.difficulty.unwrap_or_default(),
+        )
+    });
     match hand_coach::review(rec, pc.as_ref().map(|p| p as &dyn MixProvider)) {
         Ok(r) => crate::ui::coach::analysis(ui, &hand_coach::render(&r)),
         Err(e) => vec![ui.paint(
@@ -414,7 +443,7 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
     let rules = RulesConfig::standard(cfg.depth);
     let bb = rules.big_blind;
     let mut m = Match::new(rules, HUMAN).map_err(io_err)?;
-    let mut bot_snapshot = opponent.agent.infer_stats();
+    let mut bot_snapshot = BotSnapshot::take(opponent);
     let mut label = opponent.agent.label();
     let mut history_label = opponent.history_label();
     let session_start = history.records().len();
@@ -573,7 +602,7 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
                     .collect::<Vec<_>>(),
             )?;
         }
-        bot_snapshot = opponent.agent.infer_stats();
+        bot_snapshot = BotSnapshot::take(opponent);
         let view = history_view(history, session_start);
         write_lines(
             out,
@@ -611,7 +640,10 @@ pub fn run_session_with_history<R: BufRead, W: Write>(
                                 ),
                             )?
                         }
-                        BetweenHands::Help => write_lines(out, &help::between_hands(&ui, &label))?,
+                        BetweenHands::Help => write_lines(
+                            out,
+                            &help::between_hands(&ui, &label, opponent.adaptive.is_some()),
+                        )?,
                         BetweenHands::Analysis(n) => {
                             match pick_hand(n, last_record.as_ref(), history) {
                                 Ok(rec) => write_lines(out, &analysis_lines(&rec, opponent, &ui))?,
@@ -846,7 +878,7 @@ mod tests {
         let mut input = Cursor::new(b"zzz\n\n9\nk\nstats\nhelp\n".to_vec());
         let mut out = Vec::new();
         let stats = stats::render(
-            &session_stats(&m, &baseline(7), None, 2, None),
+            &session_stats(&m, &baseline(7), BotSnapshot::default(), 2, None),
             &Ui::plain(),
         );
         let help = help::in_hand(&Ui::plain(), "baseline");

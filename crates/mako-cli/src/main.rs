@@ -55,11 +55,12 @@ fn main() -> ExitCode {
         width: term::detect_width(opts.width, &env),
     };
     let seed = opts.seed.unwrap_or_else(clock_seed);
-    let mut opp = match opponent::select(
+    let mut opp = match opponent::select_with(
         opts.bot,
         opts.strategy.as_deref().map(Path::new),
         opts.depth,
         game::bot_seed(seed),
+        opts.difficulty,
     ) {
         Ok(o) => o,
         Err(e) => {
