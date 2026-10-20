@@ -1,0 +1,38 @@
+# Mako CI tiny-training configuration (M-24).
+#
+# Purpose: a seconds-long, fully reproducible training run that exercises
+# mako-train -> artifact -> load in the CLI, mako-eval and mako-wasm, plus
+# the checkpoint/resume determinism check. It is a PLUMBING fixture: it has
+# no strength whatsoever and makes no Nash/GTO claim. Never promote it.
+# Used by scripts/ci_local.sh, .github/workflows/ci.yml and
+# crates/mako-cfr/tests/e2e_train.rs.
+
+[rules]
+depth_bb = 20          # 20 BB: blinds 1/2, 40-chip starting stacks
+small_blind = 1
+big_blind = 2
+
+[abstraction]
+flop_buckets = 3
+turn_buckets = 3
+river_buckets = 3
+flop_samples = 64
+turn_samples = 64
+seed = 1296126799      # same abstraction seed as configs/smoke.toml
+
+[train]
+seed = 20261124        # differs from the eval base_seed (4157113009)
+iterations = 3_000
+checkpoint_every = 1_000
+max_wall_secs = 120    # hard cap; a debug build needs a few seconds
+linear_averaging = true
+linear_regrets = false
+regret_matching_plus = false
+cache_capacity = 65_536
+
+[output]
+dir = "target/ci-tiny"
+artifact = "ci_tiny_20bb.mako"
+checkpoint = "ci_tiny_20bb.ckpt"
+manifest = "ci_tiny_20bb.manifest.json"
+label = "ci: tiny plumbing fixture, weak, not GTO"

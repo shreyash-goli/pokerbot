@@ -294,6 +294,31 @@ fn run(difficulty: Option<&str>, extra: &[&str]) -> std::process::Output {
     mako(&args, "")
 }
 
+/// The header's `Replay:` command with its shell continuations (` \\` +
+/// newline + indent, see `ui::screens::shell_wrap`) joined back into one
+/// line. Where the wrap falls depends on the artifact path's length (e.g. a
+/// clean clone's longer temp dir), so assertions use the joined command.
+fn replay_command(out: &str) -> String {
+    let mut cmd = String::new();
+    let mut lines = out.lines().skip_while(|l| !l.starts_with("Replay: "));
+    for l in lines.by_ref() {
+        let part = l.trim_start();
+        match part.strip_suffix(" \\") {
+            Some(p) => {
+                cmd.push_str(p);
+                cmd.push(' ');
+            }
+            None => {
+                cmd.push_str(part);
+                break;
+            }
+        }
+    }
+    assert!(cmd.starts_with("Replay: mako "), "no Replay line:\n{out}");
+    cmd.push(' ');
+    cmd
+}
+
 #[test]
 fn difficulty_binary_runs_show_honest_labels() {
     let mut transcripts = Vec::new();
@@ -313,8 +338,9 @@ fn difficulty_binary_runs_show_honest_labels() {
             "stats line"
         );
         assert!(
-            out.contains(&format!("--difficulty {}", d.name())),
-            "replay hint"
+            replay_command(&out).contains(&format!(" --difficulty {} ", d.name())),
+            "replay hint: {}",
+            replay_command(&out)
         );
         assert!(out.contains("Session complete."));
         if d != Difficulty::Challenging {
@@ -424,7 +450,11 @@ fn difficulty_composes_with_adapt_and_coach_shows_fixed_policy() {
         out.contains("--adapt only"),
         "adaptive commands listed with --adapt"
     );
-    assert!(out.contains("--difficulty balanced --adapt"), "replay hint");
+    assert!(
+        replay_command(&out).contains(" --difficulty balanced --adapt"),
+        "replay hint: {}",
+        replay_command(&out)
+    );
 
     let o = mako(
         &[

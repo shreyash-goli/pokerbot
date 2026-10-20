@@ -42,16 +42,14 @@ fn seats_and_seed_derivation_match_cli() {
     }
 }
 
-/// The CLI keeps its bot-RNG domain private; guard it at the source level
-/// so a change there is caught here.
+/// The seed domains are compared by value against the CLI's public
+/// constants in `tests/e2e_parity.rs` (replaces a source-text match).
 #[test]
-fn cli_bot_seed_domain_matches_source() {
-    let src = include_str!("../../mako-cli/src/game.rs");
-    assert!(src.contains("const DOMAIN_BOT: u64 = 0x0042_4F54;"));
-    assert!(src.contains("const DOMAIN_DECK: u64 = 0x4445_434B;"));
-    assert!(src.contains("derive_seed(session, DOMAIN_BOT, 0)"));
+fn seed_domain_values_are_pinned() {
     assert_eq!(seeds::DOMAIN_BOT, 0x0042_4F54);
     assert_eq!(seeds::DOMAIN_DECK, 0x4445_434B);
+    assert_eq!(game::DOMAIN_BOT, seeds::DOMAIN_BOT);
+    assert_eq!(game::DOMAIN_DECK, seeds::DOMAIN_DECK);
 }
 
 /// Scripted human: uniform random legal, or check/call.

@@ -40,10 +40,10 @@ pub const HUMAN: Seat = Seat::Zero;
 /// The bot sits in seat One.
 pub const BOT: Seat = Seat::One;
 
-const DOMAIN_DECK: u64 = 0x4445_434B; // "DECK"
-const DOMAIN_BOT: u64 = 0x0042_4F54; // "BOT"
-const DOMAIN_AUTO: u64 = 0x4155_544F; // "AUTO"
-const DOMAIN_ADAPT: u64 = 0x4144_4150; // "ADAP"
+pub const DOMAIN_DECK: u64 = 0x4445_434B; // "DECK"
+pub const DOMAIN_BOT: u64 = 0x0042_4F54; // "BOT"
+pub const DOMAIN_AUTO: u64 = 0x4155_544F; // "AUTO"
+pub const DOMAIN_ADAPT: u64 = 0x4144_4150; // "ADAP"
 
 /// Derives an independent sub-seed from the session seed.
 pub fn derive_seed(session: u64, domain: u64, index: u64) -> u64 {
