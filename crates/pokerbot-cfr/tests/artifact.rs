@@ -1,4 +1,4 @@
-//! M-12: `.pokerbot` strategy artifact format and policy reader.
+//! `.pokerbot` strategy artifact format and policy reader.
 //! Tests are prefixed `artifact_` so `cargo test -p pokerbot-cfr artifact`
 //! selects them.
 

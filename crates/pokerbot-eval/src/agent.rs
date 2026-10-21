@@ -1,5 +1,5 @@
 //! The agent interface the evaluation harness drives: a re-export of the
-//! M-14 `pokerbot_cfr::infer` contract.
+//! `pokerbot_cfr::infer` contract.
 //!
 //! Agents see only a [`PlayerObservation`](pokerbot_core::observation::PlayerObservation)
 //! for their own seat. The harness does **not** use the agent's own sampled

@@ -1,4 +1,4 @@
-//! Strategy table: information-set key bytes → regret / strategy sums (M-10).
+//! Strategy table: information-set key bytes → regret / strategy sums.
 //!
 //! - Keys are the exact [`crate::abstraction::InfoKey`] byte encodings, never
 //!   just their hash, so distinct information sets cannot alias.
@@ -10,8 +10,7 @@
 //!   determines the legal set for a fixed `RulesConfig`) and panics.
 //! - Values are `f64`: training is single-threaded, so the memory cost
 //!   (104 bytes per entry for values) is acceptable, and f64 keeps long-run
-//!   accumulation precise. A compact f32 form can be produced at export
-//!   (M-12).
+//!   accumulation precise. A compact f32 form can be produced at export.
 
 use std::collections::HashMap;
 

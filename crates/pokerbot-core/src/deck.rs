@@ -7,7 +7,7 @@
 //! from position 0 upward. Given the same seed (or RNG state) the order is
 //! identical on every platform.
 //!
-//! # Recommended dealing order (consumed by the hand state machine, M-04)
+//! # Recommended dealing order (consumed by the hand state machine)
 //!
 //! Hole cards first, one at a time, alternating, starting with the
 //! non-button seat (the big blind): BB, Button, BB, Button. Then the board

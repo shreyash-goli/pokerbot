@@ -1,4 +1,4 @@
-//! M-16: the rules engine at 20/50/100BB. Hand-computed amounts in
+//! The rules engine at 20/50/100BB. Hand-computed amounts in
 //! comments (blinds 1/2; "pac" = pot after call).
 
 use pokerbot_core::card::parse_cards;

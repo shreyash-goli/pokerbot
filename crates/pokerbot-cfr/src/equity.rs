@@ -1,5 +1,5 @@
 //! Hand-strength equity against a uniformly random opponent, and
-//! suit-isomorphism canonicalization (M-08).
+//! suit-isomorphism canonicalization.
 //!
 //! # Definition
 //! `equity(hole, board)` is the probability that `hole` beats a hand drawn

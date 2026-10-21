@@ -1,5 +1,5 @@
-# Pokerbot fixed-vs-adaptive CFR comparison (M-20 comparator), v2: pre-registered
-# fresh eval seed for the revised rule (docs/PROGRESS.md, commit 2e35cde).
+# Pokerbot fixed-vs-adaptive CFR comparison, v2: pre-registered
+# fresh eval seed for the revised rule, recorded before the first run.
 #
 # LOCKED before the first run: artifact checksum, seeds, sample size,
 # matchups and adaptation settings are fixed here and must not be tuned after

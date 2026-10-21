@@ -1,5 +1,4 @@
-//! `pokerbot-eval`: independent, paired-seed, seat-swapped policy evaluation
-//! (M-19).
+//! `pokerbot-eval`: independent, paired-seed, seat-swapped policy evaluation.
 //!
 //! * [`agent`]: the `pokerbot_cfr::infer` agent contract (re-export)
 //! * [`baselines`]: rule-bot baselines (random legal, check/call, tight)

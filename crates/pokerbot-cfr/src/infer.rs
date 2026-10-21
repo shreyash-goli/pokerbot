@@ -1,5 +1,4 @@
-//! Policy inference: agents that pick actions from a [`PlayerObservation`]
-//! (M-14).
+//! Policy inference: agents that pick actions from a [`PlayerObservation`].
 //!
 //! An [`Agent`] sees only what its seat may legally know: its own hole
 //! cards, the revealed board and the public history. It never receives a

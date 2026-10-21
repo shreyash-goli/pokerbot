@@ -1,4 +1,4 @@
-//! `pokerbot-train`: bounded MCCFR training and `.pokerbot` export (M-13).
+//! `pokerbot-train`: bounded MCCFR training and `.pokerbot` export.
 //!
 //! Usage: `pokerbot-train --config <file> [--resume <ckpt>] [--iterations <n>]
 //! [--out <dir>] [--quiet]`. Run `pokerbot-train --help` for details.

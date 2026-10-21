@@ -1,4 +1,4 @@
-//! Post-hand coach and replay frames (M-18).
+//! Post-hand coach and replay frames.
 //!
 //! Everything here starts from a [`HandRecord`], which holds only what the
 //! human seat could know (see [`crate::history`]). Each human decision is

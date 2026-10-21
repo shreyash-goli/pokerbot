@@ -1,4 +1,4 @@
-//! M-14: the `pokerbot` binary playing a trained CFR artifact, and explicit
+//! The `pokerbot` binary playing a trained CFR artifact, and explicit
 //! handling of missing / wrong-depth / corrupt policies.
 
 mod common;

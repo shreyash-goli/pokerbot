@@ -1,4 +1,4 @@
-//! M-24 direct native <-> wasm parity. The REAL CLI session loop
+//! Direct native <-> wasm parity. The REAL CLI session loop
 //! (`pokerbot_cli::game::run_session_with_history`, the code the `pokerbot` binary
 //! runs) and the browser `GameSession` are driven with the same session
 //! seed and the CLI's own scripted human (`AutoPlayer`). Every hand must

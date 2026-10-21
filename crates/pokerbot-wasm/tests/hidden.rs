@@ -1,4 +1,4 @@
-//! M-22 hidden-information tests: nothing returned to JavaScript reveals
+//! Hidden-information tests: nothing returned to JavaScript reveals
 //! the bot's hole cards before a showdown terminal, nor after a fold.
 
 mod common;

@@ -1,4 +1,4 @@
-//! M-24 end-to-end: the `pokerbot-train` BINARY trains the CI tiny artifact
+//! End-to-end: the `pokerbot-train` BINARY trains the CI tiny artifact
 //! from `configs/ci_tiny.toml`, and a straight run equals a checkpoint +
 //! resume run byte for byte. The artifact loads through the library and is
 //! labelled as a weak plumbing fixture. Outputs go to cargo's test temp dir.

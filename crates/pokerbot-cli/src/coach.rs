@@ -1,4 +1,4 @@
-//! Bridges the trained policy into the post-hand coach (M-18).
+//! Bridges the trained policy into the post-hand coach.
 //!
 //! [`PolicyCoach`] implements [`pokerbot_analysis::coach::MixProvider`] with
 //! [`CfrAgent::strategy`], which reads only the observation it is given
@@ -12,7 +12,7 @@ use pokerbot_core::observation::PlayerObservation;
 
 /// "What the Pokerbot policy would play in your seat." Always the FIXED
 /// trained mix ([`CfrAgent::policy_strategy`]): never the difficulty blend
-/// (M-21) or the adaptive shift (M-20) the opponent may be playing.
+/// or the adaptive shift the opponent may be playing.
 pub struct PolicyCoach<'a> {
     pub agent: &'a CfrAgent,
     /// Whether the opponent is adapting (`--adapt`).

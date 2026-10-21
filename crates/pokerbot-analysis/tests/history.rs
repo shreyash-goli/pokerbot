@@ -1,4 +1,4 @@
-//! M-17 hand records: information boundary, text round trip, strict parser.
+//! Hand records: information boundary, text round trip, strict parser.
 
 mod common;
 

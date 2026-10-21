@@ -1,4 +1,4 @@
-//! Postflop equity buckets (M-08).
+//! Postflop equity buckets.
 //!
 //! A postflop bucket is `min(floor(equity · n), n − 1)`, where `equity` is
 //! own-hand equity against a uniformly random opponent hand

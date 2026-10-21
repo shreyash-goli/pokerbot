@@ -1,4 +1,4 @@
-//! M-22 session API tests: full hands, input validation, errors, JSON shape.
+//! Session API tests: full hands, input validation, errors, JSON shape.
 
 mod common;
 

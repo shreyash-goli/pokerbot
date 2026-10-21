@@ -1,4 +1,4 @@
-//! M-21 difficulty modes. Every test is named `difficulty_*`, so
+//! Difficulty modes. Every test is named `difficulty_*`, so
 //! `cargo test -p pokerbot-cli difficulty` selects them.
 
 mod common;
@@ -99,7 +99,7 @@ fn difficulty_modes_are_deterministic_per_seed() {
     }
 }
 
-/// The M-14 sampling algorithm, re-implemented here: integer weights
+/// The policy sampling algorithm, re-implemented here: integer weights
 /// `q` of the stored entry (uniform for unseen keys), one `gen_range` draw.
 fn reference_act(
     bytes: &[u8],

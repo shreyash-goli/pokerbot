@@ -1,4 +1,4 @@
-# Pokerbot policy evaluation (M-19)
+# Pokerbot policy evaluation
 
 `pokerbot-eval` (crate `crates/pokerbot-eval`) measures a trained `.pokerbot` policy by
 playing it against fixed rule-bot baselines and against itself. It reports
@@ -158,7 +158,7 @@ against weak rule bots only.
 * A 0% fallback rate means every info set the harness reached was in the
   artifact. Opponents that steer into rarer lines could see a higher rate.
 
-## Fixed vs adaptive comparison (M-20 comparator)
+## Fixed vs adaptive comparison
 
 `configs/eval_adaptive.toml` (`mode = "comparison"`) runs the fixed CFR
 policy (`cfr`) and the opt-in adaptive wrapper (`adaptive_cfr`, see
@@ -206,10 +206,12 @@ hands per matchup, and a release build. Between configs only the eval
 `crates/pokerbot-analysis/src/opponent.rs` changed. Run A and run C use
 `configs/eval_adaptive.toml` (seed 2718281829). Run B, the primary result
 for the revised rule, uses `configs/eval_adaptive_v2.toml` (seed
-3141592653). That config is identical except for `base_seed` and was
-pre-registered in `docs/PROGRESS.md` (commit 2e35cde) before it was run.
+3141592653). That config is identical except for `base_seed`. Its seed was
+fixed and recorded before it was run, in development notes that are not part
+of this repository, so the pre-registration can't be checked from this
+repository's history.
 
-#### Run A (2026-11-15): original rule, seed 2718281829
+#### Run A (2026-10-19): original rule, seed 2718281829
 
 `opponent.rs` v1, applied only when nothing is owed:
 * *Over-folder:* move Check to the smallest bet.
@@ -227,7 +229,7 @@ Run A against check-call: the adaptive agent did **worse** than fixed by
 about 22 BB/100, and the CI excludes 0. The calling-station rule removed
 value bets as well as bluffs.
 
-#### Run B (2026-11-15): revised rule, fresh pre-registered seed 3141592653 (primary)
+#### Run B (2026-10-19): revised rule, fresh pre-registered seed 3141592653 (primary)
 
 `opponent.rs` v2. Here `e` is the agent's own equity vs a random hand, from
 its own cards and the visible board only.
@@ -254,15 +256,15 @@ triggers no rule, and against fixed CFR no rule fired at all. All mirrors
 are exactly 0, and the fallback rate is 0.00% of 420,226 fixed-candidate
 decisions.
 
-*Provenance and reproduction.* The eval seed was pre-registered in
-`docs/PROGRESS.md` (commit 2e35cde) before run B. Run B itself was made
-from the uncommitted config, before that config was committed in 9b47efa.
+*Provenance and reproduction.* The eval seed was recorded before run B (see
+above). Run B itself was made from the uncommitted config, before that config
+was committed in 328efa3.
 After the commit, the committed `configs/eval_adaptive_v2.toml` was run
-once more (2026-11-15, release, 14.2 s). Its JSON report was
+once more (2026-10-20, release, 14.2 s). Its JSON report was
 **byte-identical** to run B's. That second run reproduces run B; it is not a
 second independent sample.
 
-#### Run C (2026-11-15): revised rule, seed 2718281829 (post-hoc)
+#### Run C (2026-10-19): revised rule, seed 2718281829 (post-hoc)
 
 **Post-hoc, same seed that motivated the revision; not an independent
 test.** Same rule as run B, on run A's config.

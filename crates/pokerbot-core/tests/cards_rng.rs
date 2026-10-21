@@ -1,4 +1,4 @@
-//! M-02 acceptance tests: cards, card sets, deterministic RNG and shuffle.
+//! Acceptance tests: cards, card sets, deterministic RNG and shuffle.
 //!
 //! Golden values below were produced by the Rust implementation and
 //! cross-checked with an independently written Python 3 reference of

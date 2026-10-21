@@ -1,4 +1,4 @@
-//! Training-run configuration files (M-13).
+//! Training-run configuration files.
 //!
 //! A strict parser for the small TOML subset used by `configs/*.toml`, with
 //! no external dependency:

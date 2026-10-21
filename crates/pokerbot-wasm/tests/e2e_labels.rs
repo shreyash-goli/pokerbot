@@ -1,4 +1,4 @@
-//! M-24: the browser bridge's snapshot and strategyInfo identify a CFR
+//! The browser bridge's snapshot and strategyInfo identify a CFR
 //! policy as weak and not GTO/Nash (tiny fixture and, if trained locally,
 //! the real `artifacts/smoke_20bb.pokerbot`).
 

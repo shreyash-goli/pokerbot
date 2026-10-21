@@ -1,4 +1,4 @@
-//! M-15: the binary's UI behaviour (width, colour, glyphs, commands, flags),
+//! The binary's UI behaviour (width, colour, glyphs, commands, flags),
 //! always against the untrained baseline so no artifact is needed.
 
 mod common;

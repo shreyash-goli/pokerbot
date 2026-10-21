@@ -1,4 +1,4 @@
-//! M-22 native parity: the browser session deals the same cards and the
+//! Native parity: the browser session deals the same cards and the
 //! bot makes the same decisions as the native terminal game for the same
 //! session seed and the same human actions.
 
@@ -88,7 +88,7 @@ impl Scripted {
 type Transcript = Vec<(Vec<ActionRecord>, [i64; 2])>;
 
 /// The CLI session loop's semantics (`pokerbot_cli::game::run_session` at
-/// ad6ea07) rebuilt from library pieces: one `Match` with the button
+/// e220a22) rebuilt from library pieces: one `Match` with the button
 /// starting at the human and alternating, `game::hand_deck(seed, i)` per
 /// hand, one agent seeded from the session seed for the whole session that
 /// sees only `observation(BOT)`, actions applied via `apply_legal`.

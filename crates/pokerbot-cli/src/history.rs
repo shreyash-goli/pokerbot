@@ -1,4 +1,4 @@
-//! Opening, describing and resetting the saved hand history (M-17).
+//! Opening, describing and resetting the saved hand history.
 //!
 //! The storage itself is `pokerbot_analysis::store`. This module turns the
 //! command-line choice (`--history <path>`, `--no-history`, default) into a

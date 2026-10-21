@@ -1,4 +1,4 @@
-//! M-20: public-only opponent profile and the conservative adaptive agent.
+//! Public-only opponent profile and the conservative adaptive agent.
 
 mod common;
 

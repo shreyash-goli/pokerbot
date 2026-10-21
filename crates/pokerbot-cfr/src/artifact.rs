@@ -1,4 +1,4 @@
-//! Versioned `.pokerbot` strategy artifact and policy reader (M-12).
+//! Versioned `.pokerbot` strategy artifact and policy reader.
 //!
 //! An artifact holds the **average strategy** of a trained table, quantized
 //! to `u16` per legal action, plus everything needed to check that a caller

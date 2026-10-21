@@ -79,7 +79,7 @@ pub enum BetweenHands {
     Analysis(Option<u64>),
     /// Step through a hand: the last one, or saved hand `n`.
     Replay(Option<u64>),
-    /// Show the adaptive opponent's profile of you (M-20).
+    /// Show the adaptive opponent's profile of you.
     Profile,
     /// Turn adaptation on or off.
     Adapt(bool),

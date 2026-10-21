@@ -1,4 +1,4 @@
-# Pokerbot fixed-vs-adaptive CFR comparison (M-20 comparator).
+# Pokerbot fixed-vs-adaptive CFR comparison.
 #
 # LOCKED before the first run: artifact checksum, seeds, sample size,
 # matchups and adaptation settings are fixed here and must not be tuned after

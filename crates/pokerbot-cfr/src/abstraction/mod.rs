@@ -1,9 +1,9 @@
-//! Information abstraction for heads-up NLHE (M-07).
+//! Information abstraction for heads-up NLHE.
 //!
 //! - [`preflop`]: the 169 preflop starting-hand classes.
 //! - [`history`]: public betting-history encoding.
 //! - [`postflop`]: equity buckets, [`AbstractionConfig`], bounded cache,
-//!   and the full [`EquityAbstraction`] (M-08).
+//!   and the full [`EquityAbstraction`].
 //! - [`key`]: [`InfoKey`] (street, position, card bucket, public history),
 //!   its stable bytes and portable FNV-1a hash, and the [`CardAbstraction`]
 //!   trait.

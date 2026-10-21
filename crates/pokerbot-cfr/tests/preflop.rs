@@ -1,4 +1,4 @@
-//! M-07: preflop classes, public history encoding, info keys, and the
+//! Preflop classes, public history encoding, info keys, and the
 //! hidden-information guarantee. Tests are prefixed `preflop_` so
 //! `cargo test -p pokerbot-cfr preflop` selects them.
 

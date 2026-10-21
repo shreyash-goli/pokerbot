@@ -2,7 +2,7 @@
 //!
 //! Pure, integer-only functions implementing `docs/GAME_RULES.md`. This
 //! module deliberately does not depend on cards, decks or RNG; the hand
-//! state machine (M-04) owns the mutable state and calls these helpers.
+//! state machine owns the mutable state and calls these helpers.
 //!
 //! All amounts are whole chips ([`Chips`] = `u32`). Bets and raises are
 //! expressed as **raise-to** amounts: the actor's total contribution on the

@@ -1,4 +1,4 @@
-//! M-04 seeded random-legal fuzz: invariants after every action, illegal
+//! Seeded random-legal fuzz: invariants after every action, illegal
 //! actions never mutate, determinism, and the hidden-information boundary.
 
 use pokerbot_core::card::{Card, CardSet};

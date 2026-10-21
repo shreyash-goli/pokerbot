@@ -1,4 +1,4 @@
-//! M-09: CFR reference validation on Kuhn poker.
+//! CFR reference validation on Kuhn poker.
 //! All tests are prefixed `toy_` so `cargo test -p pokerbot-cfr toy` selects them.
 
 use pokerbot_cfr::toy::cfr::{AverageWeighting, ExternalSamplingMccfr, VanillaCfr};

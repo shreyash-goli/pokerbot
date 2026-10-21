@@ -1,14 +1,14 @@
 //! `pokerbot-cfr`: counterfactual regret minimization for heads-up NLHE.
 //!
-//! * [`toy`]: Kuhn poker CFR / MCCFR reference (M-09)
+//! * [`toy`]: Kuhn poker CFR / MCCFR reference
 //! * [`abstraction`]: preflop classes, history encoding, info keys, postflop
-//!   equity buckets (M-07, M-08)
-//! * [`equity`]: equity vs a random hand, suit canonicalization (M-08)
-//! * [`regret`], [`infoset`], [`traverse`]: external-sampling MCCFR (M-10)
-//! * [`checkpoint`], [`train`]: linear weighting, bounded resumable training (M-11)
-//! * [`artifact`]: versioned `.pokerbot` average-strategy artifact and policy reader (M-12)
-//! * [`config`]: strict training-config parser used by `pokerbot-train` (M-13)
-//! * [`infer`]: observation-only agents: CFR policy inference and baseline (M-14)
+//!   equity buckets
+//! * [`equity`]: equity vs a random hand, suit canonicalization
+//! * [`regret`], [`infoset`], [`traverse`]: external-sampling MCCFR
+//! * [`checkpoint`], [`train`]: linear weighting, bounded resumable training
+//! * [`artifact`]: versioned `.pokerbot` average-strategy artifact and policy reader
+//! * [`config`]: strict training-config parser used by `pokerbot-train`
+//! * [`infer`]: observation-only agents: CFR policy inference and baseline
 
 /// Crate version, exposed so the scaffold has a testable item.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

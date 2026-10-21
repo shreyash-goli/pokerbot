@@ -1,4 +1,4 @@
-// Browser smoke test for the built demo (M-23).
+// Browser smoke test for the built demo.
 //
 //   npm run build && node scripts/smoke.mjs [--shots <dir>] [--hands N]
 //

@@ -2,7 +2,7 @@
 //!
 //! SplitMix64 (Steele, Lea, Flood, "Fast Splittable Pseudorandom Number
 //! Generators", OOPSLA 2014). This generator is private to the toy module so
-//! M-09 does not depend on `pokerbot-core`; NLHE training will use the engine's
+//! Does not depend on `pokerbot-core`; NLHE training will use the engine's
 //! seeded RNG instead. Not cryptographically secure.
 
 /// Minimal SplitMix64 generator.

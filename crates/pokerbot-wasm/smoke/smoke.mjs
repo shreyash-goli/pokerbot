@@ -1,4 +1,4 @@
-// Node smoke test for the pokerbot-wasm bridge (M-22).
+// Node smoke test for the pokerbot-wasm bridge.
 //
 //   node crates/pokerbot-wasm/smoke/smoke.mjs <pkg-dir built with --target nodejs> [policy.pokerbot]
 //

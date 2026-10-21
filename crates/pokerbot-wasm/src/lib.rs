@@ -1,4 +1,4 @@
-//! `pokerbot-wasm`: the browser bridge (M-22).
+//! `pokerbot-wasm`: the browser bridge.
 //!
 //! The same `pokerbot-core` engine and `pokerbot-cfr` policy reader that the native
 //! game uses, compiled to `wasm32-unknown-unknown` and exposed to

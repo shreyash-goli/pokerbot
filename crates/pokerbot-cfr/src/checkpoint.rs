@@ -1,4 +1,4 @@
-//! Resumable training checkpoints (M-11).
+//! Resumable training checkpoints.
 //!
 //! A checkpoint is the complete trainer state needed to continue training
 //! bit-identically: configuration, iteration counter, RNG state, counters

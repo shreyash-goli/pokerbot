@@ -1,4 +1,4 @@
-//! M-24 cross-check: the coach's exact equity (`pokerbot_analysis::equity`) and
+//! Cross-check: the coach's exact equity (`pokerbot_analysis::equity`) and
 //! the trainer's exact equity (`pokerbot_cfr::equity::exact_equity`) are two
 //! independent implementations; on seeded river and turn spots they must
 //! agree exactly (same win/tie point tally over the same trial count).

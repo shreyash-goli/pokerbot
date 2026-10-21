@@ -1,4 +1,4 @@
-# Browser/website integration contract (M-22 bridge, M-23 browser client)
+# Browser/website integration contract (WASM bridge and browser client)
 
 `crates/pokerbot-wasm` compiles the native engine (`pokerbot-core`) and the policy
 reader and inference code (`pokerbot-cfr::infer`) to WebAssembly with
@@ -10,12 +10,12 @@ samples from it.
 
 Layers:
 
-- `crates/pokerbot-wasm` (M-22): the wasm-bindgen `PokerbotSession` class, which
+- `crates/pokerbot-wasm`: the wasm-bindgen `PokerbotSession` class, which
   returns JSON.
-- `packages/pokerbot-browser` (M-23): typed DTOs, the async `PokerbotClient` that
+- `packages/pokerbot-browser`: typed DTOs, the async `PokerbotClient` that
   runs the engine in a Web Worker, and the reusable `<PokerbotTable />` React
   component.
-- `examples/react-demo` (M-23): a Vite + React demo that plays the 20BB
+- `examples/react-demo`: a Vite + React demo that plays the 20BB
   smoke policy.
 
 ## Build
@@ -28,7 +28,7 @@ wasm-pack build crates/pokerbot-wasm --target nodejs  --out-dir ../../target/was
 node crates/pokerbot-wasm/smoke/smoke.mjs target/wasm-node artifacts/smoke_20bb.pokerbot
 ```
 
-Measured at M-22, release build, wasm-opt as run by wasm-pack 0.15.1:
+Measured with a release build, wasm-opt as run by wasm-pack 0.15.1:
 `pokerbot_wasm_bg.wasm` is 142,210 bytes (62,880 gzipped) for `--target
 bundler`. The `--target web` build used by `pokerbot-browser` is 144,718 bytes
 (about 65 KB gzipped). The 20BB smoke
@@ -61,12 +61,9 @@ export type PokerbotAction = 'fold' | 'check' | 'call' | 'half_pot' | 'pot' | 'a
   native `u64` seed, including those above 2^53, works unchanged. Anything
   else throws `invalid_seed` and is never wrapped modulo 2^64: a negative or
   too-large BigInt, a `Number`, a string, `null` or `undefined`.
-  - **Number vs BigInt:** in the original M-22 build the seed parameter was
-    a plain wasm-bindgen `u64`, so passing a `Number` (`new PokerbotSession(20, 7,
-    ...)`) threw a bare `TypeError` ("Cannot convert 7 to a BigInt"), and a
-    negative BigInt silently wrapped. Since M-23 the seed is validated
-    explicitly and both cases throw `invalid_seed: ...`. The TypeScript
-    signature still says `bigint`.
+  - **Number vs BigInt:** the seed is validated explicitly, so passing a
+    `Number` (`new PokerbotSession(20, 7, ...)`) or a negative BigInt throws
+    `invalid_seed: ...`. The TypeScript signature says `bigint`.
   - `PokerbotClient` (in `pokerbot-browser`) also accepts a non-negative safe-integer
     `Number` and converts it with `BigInt(n)`. Unsafe, fractional and
     negative Numbers are rejected before reaching wasm.
@@ -82,7 +79,7 @@ export type PokerbotAction = 'fold' | 'check' | 'call' | 'half_pot' | 'pot' | 'a
   hand is over.
 - Inference runs synchronously on the calling thread. The measured cost is
   well under 1 ms per decision (Node: about 0.02 ms per bot decision, about
-  20 ms to load the smoke artifact). Use a Web Worker if needed (M-23).
+  20 ms to load the smoke artifact). Use a Web Worker if needed.
 
 ### Errors
 
@@ -195,10 +192,9 @@ CLI crate. `tests/parity.rs` checks the following:
 - An FNV-1a digest of every snapshot and history JSON in a check/call
   session is identical natively and from the wasm build under Node
   (`smoke.mjs`). The baseline digest is a constant both sides assert. The
-  CFR (smoke artifact) digest `0x62bed279a8824406` matched in both builds
-  at M-22.
+  CFR (smoke artifact) digest `0x62bed279a8824406` matches in both builds.
 
-## Next.js / website notes (M-23)
+## Next.js / website notes
 
 - Import the package dynamically in a client component (`'use client'`, no
   SSR for wasm initialization). Serve `.wasm` as `application/wasm`.
@@ -209,7 +205,7 @@ CLI crate. `tests/parity.rs` checks the following:
 - Show `bot.label`, `bot.disclaimer` and `note` to players. The CFR bot is
   not GTO. The smoke policy is weak.
 
-## Browser client and React component (M-23)
+## Browser client and React component
 
 ### `packages/pokerbot-browser`
 

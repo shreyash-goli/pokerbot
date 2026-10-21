@@ -1,4 +1,4 @@
-//! Toy-game reference implementations used to validate CFR machinery (task M-09).
+//! Toy-game reference implementations used to validate CFR machinery.
 //!
 //! Before CFR is applied to abstracted no-limit hold'em, the regret-matching,
 //! vanilla CFR, and external-sampling MCCFR code paths are validated on

@@ -1,4 +1,4 @@
-//! Golden snapshots of the M-15 UI.
+//! Golden snapshots of the terminal UI.
 //!
 //! Fixed seeded states (preflop, flop, turn, river, showdown, fold) and the
 //! session header are rendered at widths 80 and 120, in two styles:

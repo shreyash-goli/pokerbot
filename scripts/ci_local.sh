@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local CI for Pokerbot (M-24).
+# Full local CI for Pokerbot.
 #
 #   scripts/ci_local.sh [--with-smoke-training] [--step <name>]...
 #
@@ -8,7 +8,6 @@
 #   fmt            cargo fmt --all -- --check
 #   clippy         cargo clippy --workspace --all-targets -- -D warnings
 #   test           cargo test --workspace
-#   tasks          python3 tools/validate_tasks.py + python unittests (tests/)
 #   bins           debug build of pokerbot, pokerbot-train, pokerbot-eval
 #   smoke-artifact artifacts/smoke_20bb.pokerbot present? Otherwise trained by
 #                  scripts/train_smoke.sh with --with-smoke-training (release
@@ -29,7 +28,7 @@
 #                  Chrome or the artifact.
 #
 # Requirements (stated): the rust-toolchain.toml toolchain (with the
-# wasm32-unknown-unknown target), python3, wasm-pack, node (>= 22) and npm;
+# wasm32-unknown-unknown target), wasm-pack, node (>= 22) and npm;
 # Google Chrome for the browser step; network access for `npm ci`.
 # CARGO_TARGET_DIR is honoured. A log is written to
 # $TARGET/ci-local/ci-local-<timestamp>.log. Exit status 1 if any step FAILED.
@@ -75,10 +74,6 @@ have_chrome() {
 step_fmt() { cargo fmt --all -- --check; }
 step_clippy() { cargo clippy --workspace --all-targets -- -D warnings; }
 step_test() { cargo test --workspace; }
-step_tasks() {
-  python3 tools/validate_tasks.py
-  python3 -m unittest discover -s tests -v
-}
 step_bins() { cargo build -p pokerbot-cli -p pokerbot-cfr -p pokerbot-eval --bins; }
 step_smoke_artifact() {
   if [[ -s "$smoke_art" ]]; then
@@ -128,7 +123,7 @@ step_browser() {
   (cd examples/react-demo && npm ci && npm run build && npm run smoke)
 }
 
-steps=(fmt clippy test tasks bins smoke-artifact eval-smoke wasm-build policy-load wasm-smoke browser)
+steps=(fmt clippy test bins smoke-artifact eval-smoke wasm-build policy-load wasm-smoke browser)
 if [[ ${#only[@]} -gt 0 ]]; then
   for s in "${only[@]}"; do
     [[ " ${steps[*]} " == *" $s "* ]] || { echo "ci_local: unknown step $s" >&2; exit 2; }

@@ -102,9 +102,9 @@ pub trait CardAbstraction {
 
 /// Preflop-only abstraction: the bucket is the [`PreflopClass`] index.
 ///
-/// Postflop streets are **unsupported** (`num_buckets = 0`, `bucket` errors)
-/// until M-08 supplies postflop buckets, so a placeholder can never be
-/// mistaken for a real postflop bucket.
+/// Postflop streets are **unsupported** here (`num_buckets = 0`, `bucket`
+/// errors); real postflop buckets come from the postflop abstraction, so a
+/// placeholder can never be mistaken for one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PreflopClassAbstraction;
 

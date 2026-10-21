@@ -44,7 +44,7 @@ impl AutoPolicy {
     }
 }
 
-/// Where the hand history (M-17) is kept.
+/// Where the hand history is kept.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum HistoryChoice {
     /// `$POKERBOT_HOME/session-history.txt`, else `~/.pokerbot/session-history.txt`.
@@ -79,9 +79,9 @@ pub struct Options {
     pub history: HistoryChoice,
     /// `--reset-stats`: delete the saved history file and exit.
     pub reset_stats: bool,
-    /// `--adapt`: experimental adaptive opponent (M-20). Off by default.
+    /// `--adapt`: experimental adaptive opponent. Off by default.
     pub adapt: bool,
-    /// `--difficulty` (M-21): how the CFR policy's mix is blended with
+    /// `--difficulty`: how the CFR policy's mix is blended with
     /// uniform-random legal play. Default challenging (policy as-is).
     pub difficulty: Difficulty,
 }

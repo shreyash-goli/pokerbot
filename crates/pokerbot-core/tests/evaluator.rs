@@ -1,4 +1,4 @@
-//! M-03 acceptance tests: hand evaluator golden cases, invariances,
+//! Acceptance tests: hand evaluator golden cases, invariances,
 //! fast-path vs brute-force reference agreement, and category histograms.
 //!
 //! Release-only exhaustive runs:

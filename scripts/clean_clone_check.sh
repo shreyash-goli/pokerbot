@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clean-clone check for Pokerbot (M-24).
+# Clean-clone check for Pokerbot.
 #
 #   scripts/clean_clone_check.sh [--include-working-tree] [ci_local.sh args...]
 #

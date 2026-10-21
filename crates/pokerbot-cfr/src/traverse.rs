@@ -1,4 +1,4 @@
-//! External-sampling MCCFR over the abstract heads-up NLHE game (M-10).
+//! External-sampling MCCFR over the abstract heads-up NLHE game.
 //!
 //! Algorithm: Lanctot, Waugh, Zinkevich, Bowling, "Monte Carlo Sampling for
 //! Regret Minimization in Extensive Games", NIPS 2009, §3 (external
@@ -27,7 +27,7 @@
 //! sampled chance outcome, not information available to a decision.
 //!
 //! The table is trained for one `RulesConfig` (blinds + equal stacks), which
-//! M-12 records in artifact metadata. Average strategies approximate an
+//! Records in artifact metadata. Average strategies approximate an
 //! equilibrium of the *abstract* game only; no claim of GTO play is made.
 
 use pokerbot_core::action::Seat;
@@ -57,7 +57,7 @@ pub struct TrainerConfig {
     pub cache_capacity: usize,
     /// Update-rule flags.
     pub update: UpdateConfig,
-    /// Iteration weighting (M-11); default is unweighted.
+    /// Iteration weighting; default is unweighted.
     pub weighting: Weighting,
     /// Cross-check every fast-path key against `InfoKey::from_observation`
     /// (slow; for tests).
@@ -229,7 +229,7 @@ impl Trainer {
         self.rng.state()
     }
 
-    /// Rebuild a trainer from checkpointed parts (M-11). The equity cache
+    /// Rebuild a trainer from checkpointed parts. The equity cache
     /// starts empty, which does not affect results.
     pub fn restore(
         config: TrainerConfig,

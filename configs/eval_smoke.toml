@@ -1,4 +1,4 @@
-# Pokerbot evaluation smoke configuration (M-19).
+# Pokerbot evaluation smoke configuration.
 #
 # LOCKED before running: seeds, sample size, opponents and gate thresholds
 # are fixed here and must not be tuned after looking at results. Change them

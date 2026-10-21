@@ -1,4 +1,4 @@
-//! M-06 acceptance tests: event streams, viewer visibility, hand-log
+//! Acceptance tests: event streams, viewer visibility, hand-log
 //! replay, text format, and public-state reconstruction.
 
 use pokerbot_core::card::{Card, parse_cards};

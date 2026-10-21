@@ -1,4 +1,4 @@
-//! M-24: the evaluation report labels the policy as plumbing-only / not for
+//! The evaluation report labels the policy as plumbing-only / not for
 //! competition and disclaims any GTO, Nash or exploitability claim; a
 //! non-pinned artifact never promotes. Uses the real
 //! `artifacts/smoke_20bb.pokerbot` when it was trained locally.

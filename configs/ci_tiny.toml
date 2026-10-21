@@ -1,4 +1,4 @@
-# Pokerbot CI tiny-training configuration (M-24).
+# Pokerbot CI tiny-training configuration.
 #
 # Purpose: a seconds-long, fully reproducible training run that exercises
 # pokerbot-train -> artifact -> load in the CLI, pokerbot-eval and pokerbot-wasm, plus

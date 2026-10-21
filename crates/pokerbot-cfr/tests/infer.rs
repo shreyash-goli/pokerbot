@@ -1,4 +1,4 @@
-//! M-14 policy-inference tests. Prefixed `infer_` so
+//! Policy-inference tests. Prefixed `infer_` so
 //! `cargo test -p pokerbot-cfr infer` selects them.
 
 use std::sync::atomic::AtomicBool;

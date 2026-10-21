@@ -1,4 +1,4 @@
-//! Showdown equity for the coach (M-18), using only `pokerbot_core`'s
+//! Showdown equity for the coach, using only `pokerbot_core`'s
 //! evaluator.
 //!
 //! * [`vs_random`] — the hero's equity against a **uniformly random**

@@ -1,4 +1,4 @@
-//! M-16: policy artifacts must match the configured stack depth. Runs the
+//! Policy artifacts must match the configured stack depth. Runs the
 //! real `pokerbot` binary. Tiny artifacts are trained in-process (a few hundred
 //! iterations; plumbing fixtures with no strength claim). Each run uses an
 //! empty working directory so the default `artifacts/smoke_<bb>bb.pokerbot`

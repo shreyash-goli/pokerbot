@@ -1,4 +1,4 @@
-.PHONY: all fmt fmt-check check clippy test validate ci ci-local clean-clone
+.PHONY: all fmt fmt-check check clippy test ci ci-local clean-clone
 
 all: ci
 
@@ -17,13 +17,9 @@ clippy:
 test:
 	cargo test --workspace
 
-validate:
-	python3 tools/validate_tasks.py
-	python3 -m unittest discover -s tests -v
+ci: fmt-check check clippy test
 
-ci: fmt-check check clippy test validate
-
-# Full local CI (M-24): Rust checks, python task checks, binary/wasm/browser
+# Full local CI: Rust checks plus binary, artifact, eval, wasm and browser
 # end-to-end steps; see scripts/ci_local.sh. ARGS=--with-smoke-training
 # trains the smoke policy if artifacts/smoke_20bb.pokerbot is absent.
 ci-local:

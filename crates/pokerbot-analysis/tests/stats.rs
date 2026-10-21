@@ -1,4 +1,4 @@
-//! M-17 statistics against hand-computed values.
+//! Statistics against hand-computed values.
 
 mod common;
 

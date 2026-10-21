@@ -1,12 +1,12 @@
 # Pokerbot strategy artifact format (`.pokerbot`), version 1
 
-Status: specification for M-12. Implemented by
+Status: implemented by
 `crates/pokerbot-cfr/src/artifact.rs`, tested by `crates/pokerbot-cfr/tests/artifact.rs`.
 This is an original format, written independently. No other
 poker project's format or code was used.
 
 A `.pokerbot` file stores the **average strategy** of an external-sampling MCCFR
-table (M-10/M-11), quantized per legal action. It also stores the metadata
+table, quantized per legal action. It also stores the metadata
 needed to refuse use with the wrong game. It does not store regrets; resumable
 training uses the separate checkpoint format (`checkpoint.rs`, magic
 `PKBTCKPT`).

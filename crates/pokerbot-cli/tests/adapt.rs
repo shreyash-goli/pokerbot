@@ -1,4 +1,4 @@
-//! M-20 end-to-end: `--adapt` is off by default; when on it is labelled,
+//! End-to-end: `--adapt` is off by default; when on it is labelled,
 //! conservative, inspectable (`profile`), switchable (`adapt off`) and
 //! resettable (`reset-profile`). All runs use `common::pokerbot`, which
 //! sandboxes POKERBOT_HOME/HOME per child and adds `--no-history`.

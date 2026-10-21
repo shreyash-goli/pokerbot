@@ -1,4 +1,4 @@
-//! M-13: `pokerbot-train` CLI and config parser. Tests are prefixed `train_cli_`.
+//! `pokerbot-train` CLI and config parser. Tests are prefixed `train_cli_`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

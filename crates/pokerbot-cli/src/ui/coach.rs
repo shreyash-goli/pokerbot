@@ -1,4 +1,4 @@
-//! Rendering of the post-hand coach and the replay viewer (M-18).
+//! Rendering of the post-hand coach and the replay viewer.
 //!
 //! Text comes from `pokerbot_analysis::coach`; this module only wraps it to the
 //! width and applies the theme. Replay frames are rendered from the human's

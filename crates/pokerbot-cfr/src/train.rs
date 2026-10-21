@@ -1,4 +1,4 @@
-//! Bounded, cancellable, resumable training loop (M-11).
+//! Bounded, cancellable, resumable training loop.
 //!
 //! [`train`] runs the [`Trainer`] until `config.iterations` total iterations
 //! are reached, the `cancel` flag is set, or the optional wall-clock budget

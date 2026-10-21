@@ -1,5 +1,5 @@
 //! End-to-end tests of the `pokerbot` binary against the untrained baseline
-//! (M-05). CFR-policy sessions are tested in `tests/cfr.rs`.
+//!. CFR-policy sessions are tested in `tests/cfr.rs`.
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};

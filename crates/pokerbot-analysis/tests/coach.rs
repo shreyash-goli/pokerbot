@@ -1,4 +1,4 @@
-//! M-18 coach: pot odds, policy mixes at the human's own observation,
+//! Coach: pot odds, policy mixes at the human's own observation,
 //! decision-time vs hindsight separation, and no hidden-card leakage.
 
 mod common;

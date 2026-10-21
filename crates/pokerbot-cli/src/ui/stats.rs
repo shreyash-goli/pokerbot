@@ -2,7 +2,7 @@
 //!
 //! Rendering takes a plain [`SessionStats`] value and never touches game
 //! state. The optional [`HistoryView`] carries `pokerbot-analysis` statistics
-//! (M-17), which are computed only from the public decision history of
+//!, which are computed only from the public decision history of
 //! completed hands.
 
 use pokerbot_analysis::stats::{PlayerStats, SessionStats as AnalysisStats, SplitStats};
@@ -13,7 +13,7 @@ use pokerbot_cfr::infer::Difficulty;
 use super::term::wrap;
 use super::{Role, Ui, chips_delta};
 
-/// Statistics from the saved hand history (M-17).
+/// Statistics from the saved hand history.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HistoryView {
     /// Hands completed in this run of the program.
@@ -35,7 +35,7 @@ pub enum BotSources {
         fallback: u64,
         /// Decisions shifted by the adaptive layer (`--adapt`), if active.
         adapted: Option<u64>,
-        /// The difficulty the policy plays at (M-21).
+        /// The difficulty the policy plays at.
         difficulty: Difficulty,
     },
     /// The untrained baseline.
@@ -56,7 +56,7 @@ pub struct SessionStats {
     pub sources: BotSources,
     /// Detailed statistics; `None` renders the score panel only.
     pub history: Option<HistoryView>,
-    /// Adaptive-opponent note (M-20); `None` when `--adapt` is off.
+    /// Adaptive-opponent note; `None` when `--adapt` is off.
     pub adaptive: Option<String>,
 }
 

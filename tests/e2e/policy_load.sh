@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M-24 end-to-end policy loading across binaries.
+# End-to-end policy loading across binaries.
 #
 #   tests/e2e/policy_load.sh <bin-dir> <out-dir> [<wasm-node-pkg-dir>]
 #

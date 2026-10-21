@@ -1,4 +1,4 @@
-//! M-10: external-sampling MCCFR updates, table, determinism.
+//! External-sampling MCCFR updates, table, determinism.
 //! Tests are prefixed `mccfr_` so `cargo test -p pokerbot-cfr mccfr` selects them.
 
 use std::time::Instant;

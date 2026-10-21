@@ -2,16 +2,16 @@
 //! coach, all from information a player may legitimately know.
 //!
 //! * [`history`] — [`history::HandRecord`], built from the human seat's
-//!   viewer-filtered events, and the `pokerbot-history v1` text format (M-17).
+//!   viewer-filtered events, and the `pokerbot-history v1` text format.
 //! * [`stats`] — [`stats::SessionStats`]: net chips, BB/100, VPIP, PFR,
-//!   aggression, showdowns and positional splits from public actions (M-17).
+//!   aggression, showdowns and positional splits from public actions.
 //! * [`store`] — atomic local persistence and the CLI-facing
-//!   [`store::SessionRecorder`] (M-17).
+//!   [`store::SessionRecorder`].
 //! * [`coach`] — post-hand review separating decision-time information from
-//!   hindsight, and replay frames (M-18).
-//! * [`equity`] — showdown equity vs a random or a shown hand (M-18).
+//!   hindsight, and replay frames.
+//! * [`equity`] — showdown equity vs a random or a shown hand.
 //! * [`opponent`] — opt-in, experimental opponent tendency model and
-//!   [`opponent::AdaptiveAgent`] (M-20), from public actions only.
+//!   [`opponent::AdaptiveAgent`], from public actions only.
 
 pub mod coach;
 pub mod equity;

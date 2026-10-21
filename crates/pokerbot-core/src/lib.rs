@@ -1,15 +1,15 @@
 //! `pokerbot-core` — heads-up no-limit hold'em engine primitives.
 //!
-//! * [`action`] — seats, action records, action errors (M-04)
-//! * [`card`] — cards and card sets (M-02)
-//! * [`deck`] — seeded portable shuffle and dealing (M-02)
-//! * [`events`] — replayable event stream with per-viewer visibility (M-06)
-//! * [`eval`] — hand evaluator: categories, best five of seven (M-03)
-//! * [`observation`] — per-seat observation, the hidden-information boundary (M-04)
-//! * [`replay`] — hand logs, deterministic replay, public-state rebuild (M-06)
-//! * [`rng`] — deterministic xoshiro256** RNG (M-02)
-//! * [`rules`] — betting rules, legal actions, chip accounting (M-01)
-//! * [`state`] — authoritative hand state machine (M-04)
+//! * [`action`] — seats, action records, action errors
+//! * [`card`] — cards and card sets
+//! * [`deck`] — seeded portable shuffle and dealing
+//! * [`events`] — replayable event stream with per-viewer visibility
+//! * [`eval`] — hand evaluator: categories, best five of seven
+//! * [`observation`] — per-seat observation, the hidden-information boundary
+//! * [`replay`] — hand logs, deterministic replay, public-state rebuild
+//! * [`rng`] — deterministic xoshiro256** RNG
+//! * [`rules`] — betting rules, legal actions, chip accounting
+//! * [`state`] — authoritative hand state machine
 //!
 //! The crate has no dependencies and builds for `wasm32-unknown-unknown`.
 

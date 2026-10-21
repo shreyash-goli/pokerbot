@@ -1,4 +1,4 @@
-//! Fixed-vs-adaptive comparator (M-20): information boundary, per-hand
+//! Fixed-vs-adaptive comparator: information boundary, per-hand
 //! observation, determinism when disabled, reported distribution, config.
 
 mod common;

@@ -68,7 +68,6 @@ decisions.
 | [`docs/STRATEGY_FORMAT.md`](docs/STRATEGY_FORMAT.md) | `.pokerbot` artifact layout, checksums, abstraction fingerprint |
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | Evaluation methodology, results, limitations |
 | [`docs/WEB_INTEGRATION.md`](docs/WEB_INTEGRATION.md) | WASM API, hidden-information contract, React/Next.js embedding |
-| [`docs/PROGRESS.md`](docs/PROGRESS.md) / [`docs/TASKS.json`](docs/TASKS.json) | Task-by-task build log with QA evidence |
 
 ## Train, play, evaluate, embed
 
@@ -99,9 +98,9 @@ cargo run --release -p pokerbot-eval -- --config <file.toml> --json out.json
 
 Results are deterministic for a given config. For the adaptive comparison,
 only the confirmation run's seed (3141592653, `configs/eval_adaptive_v2.toml`)
-was committed before it was run. The earlier runs (A: original rule, config
-not committed beforehand; C: post-hoc) are described in `docs/EVALUATION.md`
-and `docs/PROGRESS.md`.
+was fixed and recorded before it was run, in development notes that are not
+part of this repository. The earlier runs (A: original rule, config
+not committed beforehand; C: post-hoc) are described in `docs/EVALUATION.md`.
 
 **Embed in a website**:
 
@@ -126,7 +125,7 @@ steps have not been tested in a real Next.js app. The wasm module is about
 ## Checks
 
 ```sh
-make ci            # fmt-check, check, clippy -D warnings, test, task-graph validation
+make ci            # fmt-check, check, clippy -D warnings, test
 make ci-local      # the above plus binary, artifact, eval, wasm and browser end-to-end steps
 make clean-clone   # ci-local in a fresh `git archive HEAD` export with its own target dir
 ```
@@ -136,6 +135,25 @@ need something absent (no local Chrome, no trained artifact) print a loud
 `!! SKIPPED` banner and appear as `SKIP` in the summary. A run whose only
 non-PASS steps are SKIPs still exits 0, so read the summary. There is no hosted
 CI workflow; these checks are run locally.
+
+## Reproducing the results
+
+Training and evaluation are deterministic (seeded, single-threaded), so a fresh
+clone with the pinned toolchain reproduces these exactly:
+
+```sh
+scripts/train_smoke.sh
+# manifest: 500000 iterations, 39741 entries,
+#   artifact_fnv1a64 0xd2767c7dad569fdd, abstraction_fingerprint 0x9462df7ea11185da
+cargo run --release -p pokerbot-eval -- --smoke --require-promote
+# vs random +89.83 [65.14, 114.51], vs checkcall +146.84 [124.43, 169.24]; PROMOTE
+cargo run --release -p pokerbot-eval -- --config configs/eval_adaptive_v2.toml
+# adaptive comparison, run B in docs/EVALUATION.md
+```
+
+`configs/eval_smoke.toml` pins the artifact checksum, so a different artifact
+fails the promotion gate instead of producing silently different numbers.
+`make clean-clone` repeats the full check suite in a fresh export of `HEAD`.
 
 ## Benchmark results (smoke policy, 20BB)
 
@@ -176,8 +194,9 @@ default and is labelled experimental (`docs/EVALUATION.md`).
 
 ## Provenance and license
 
-All code, tests and configs in this repository were newly written for it. Trained artifacts come only
-from its own trainer and none are committed. The project is inspired at the feature level by
+All code, tests and configs in this repository were newly written for it.
+Trained artifacts come only from its own trainer and none are committed. The
+project is inspired at the feature level by
 [PvRao-29/Mako](https://github.com/PvRao-29/Mako). No source, tests, binaries
 or strategy files from that project are used. Algorithms follow the published
 literature:

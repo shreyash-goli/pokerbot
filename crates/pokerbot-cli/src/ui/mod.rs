@@ -1,4 +1,4 @@
-//! The retro terminal UI (M-15).
+//! The retro terminal UI.
 //!
 //! Everything shown during a hand is rendered from the human seat's
 //! `PlayerObservation`, the opponent's public label and session statistics;
@@ -11,7 +11,7 @@
 //! * [`screens`]: session/hand headers, street banners, results, prompts
 //! * [`stats`]: session statistics panel (plain input struct)
 //! * [`help`]: command help, listing exactly the working commands
-//! * [`coach`]: post-hand analysis and replay viewer (M-18)
+//! * [`coach`]: post-hand analysis and replay viewer
 
 pub mod coach;
 pub mod help;

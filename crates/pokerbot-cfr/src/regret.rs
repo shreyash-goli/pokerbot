@@ -1,5 +1,4 @@
-//! Regret matching and CFR update rules over the six abstract action slots
-//! (M-10).
+//! Regret matching and CFR update rules over the six abstract action slots.
 //!
 //! An information set stores one slot per [`ActionKind`] in canonical order
 //! (`Fold, Check, Call, HalfPot, Pot, AllIn`) plus a **legal mask** (bit `i`
@@ -12,7 +11,7 @@
 //! - Regret-matching+ (Tammelin 2014) is an optional flag: cumulative regrets
 //!   are floored at 0 after every update. Plain external-sampling MCCFR
 //!   (Lanctot et al. 2009) is the default.
-//! - Strategy accumulation takes an explicit `weight`, so M-11 can supply a
+//! - Strategy accumulation takes an explicit `weight`, so training can supply a
 //!   linear schedule (Brown & Sandholm 2019); the default weight is 1.
 //!
 //! The slice-based helpers from the Kuhn reference are re-exported for
@@ -113,7 +112,7 @@ pub struct UpdateConfig {
     pub regret_matching_plus: bool,
 }
 
-/// Iteration weighting (M-11), after Brown & Sandholm, "Solving
+/// Iteration weighting, after Brown & Sandholm, "Solving
 /// Imperfect-Information Games via Discounted Regret Minimization", AAAI 2019
 /// (Linear CFR). With `t >= 1` the 1-based iteration number:
 ///

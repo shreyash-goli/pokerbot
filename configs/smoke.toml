@@ -1,10 +1,10 @@
-# Pokerbot smoke-training configuration (M-13).
+# Pokerbot smoke-training configuration.
 #
 # Purpose: exercise the full train -> checkpoint -> export -> load pipeline
 # with a small, reproducible, from-scratch MCCFR policy at 20 big blinds.
 # This is a plumbing smoke test, NOT a competitive policy: there is no claim
-# of strength, Nash equilibrium or GTO play. Budget: docs/PROGRESS.md
-# ("Compute budget for M-13 smoke training").
+# of strength, Nash equilibrium or GTO play. Budget: single-threaded,
+# max_wall_secs below (about 2 minutes in release).
 
 [rules]
 depth_bb = 20          # 20 BB: blinds 1/2, 40-chip starting stacks

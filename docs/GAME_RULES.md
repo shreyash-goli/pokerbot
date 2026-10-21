@@ -1,8 +1,8 @@
 # Pokerbot game rules (heads-up no-limit hold'em, six-action abstraction)
 
-Status: specification for M-01, implemented by `crates/pokerbot-core/src/rules.rs`
-(betting/accounting) and `card.rs`/`deck.rs`/`rng.rs` (M-02). The hand state
-machine (M-04) must follow this document. Written independently from the
+Status: implemented by `crates/pokerbot-core/src/rules.rs`
+(betting/accounting) and `card.rs`/`deck.rs`/`rng.rs`. The hand state
+machine must follow this document. Written independently from the
 standard public rules of Texas hold'em; no code or text from other poker
 projects was used.
 
@@ -36,7 +36,7 @@ projects was used.
   `index = rank*4 + suit`) using the seeded `PokerbotRng` (xoshiro256**, seeded via
   SplitMix64; unbiased bounded draws by Lemire's method). Same seed ⇒ same
   deck on every platform.
-- Dealing order (recommended for M-04): hole cards one at a time, alternating,
+- Dealing order: hole cards one at a time, alternating,
   starting with the big blind: BB, Button, BB, Button (deck positions 0–3).
   Board: flop = positions 4–6, turn = 7, river = 8. No burn cards.
 - Streets: Preflop (0 board cards), Flop (3 revealed, 3 total), Turn (+1, 4),
@@ -134,7 +134,7 @@ equal at the start of every hand, a player making a short all-in raise is
 all-in, so the opponent is also blocked by `opp_stack == 0`; the reopening
 flag is kept for correctness with unequal stacks.
 
-State-machine formulation (M-04, `state.rs`): a seat **needs to act** iff it
+State-machine formulation (`state.rs`): a seat **needs to act** iff it
 has chips behind, its street contribution does not exceed the opponent's, and
 either it is facing chips (`street_c < opp_street_c`) or it has not yet acted
 this street while the opponent still has chips behind. After every non-fold
@@ -158,7 +158,7 @@ The API reports street `Showdown` for every terminal state, including a fold.
 2. **Unmatched chips**: before any award, the larger total contributor is
    refunded `|c_button - c_bb|` (uncalled bet or excess over an all-in for
    less). The contested pot is `2 * min(c_button, c_bb)`.
-3. **Showdown**: each player's best five of seven cards (M-03 evaluator); the
+3. **Showdown**: each player's best five of seven cards (see `eval.rs`); the
    better hand wins the contested pot; equal hands split it with
    `split_pot(pot, n)`: each gets `floor(pot / n)` and the `pot % n` odd chips
    go one each to winners in priority order, with the **big blind

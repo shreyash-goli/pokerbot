@@ -1,4 +1,4 @@
-//! M-24: the terminal game identifies a CFR policy as a weak, plumbing-only,
+//! The terminal game identifies a CFR policy as a weak, plumbing-only,
 //! not-GTO smoke policy, for the tiny fixture and (if trained locally) the
 //! real `artifacts/smoke_20bb.pokerbot`. Children run sandboxed (tests/common).
 

@@ -1,4 +1,4 @@
-//! M-24 end-to-end: a full seeded `pokerbot` session saved with `--history`
+//! End-to-end: a full seeded `pokerbot` session saved with `--history`
 //! replays exactly through the engine. Every saved hand is rebuilt from the
 //! session seed's deck and the recorded actions; results, payoffs, revealed
 //! cards and the record itself must match, and the transcript's final score

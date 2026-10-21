@@ -1,4 +1,4 @@
-//! M-04 golden scripted hands and state-machine API tests. Expected chip
+//! Golden scripted hands and state-machine API tests. Expected chip
 //! amounts are hand-computed in comments (blinds 1/2; S = starting stack).
 
 use pokerbot_core::card::{Card, parse_cards};

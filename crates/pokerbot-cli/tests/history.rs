@@ -1,4 +1,4 @@
-//! M-17 end-to-end: the binary records completed hands to a history file,
+//! End-to-end: the binary records completed hands to a history file,
 //! statistics persist across runs, corrupt files are quarantined, reset is
 //! explicit, `--no-history` writes nothing, and the saved file never holds
 //! the bot's unrevealed hole cards.

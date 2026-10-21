@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Train the bounded 20BB smoke policy (M-13) and print its manifest.
+# Train the bounded 20BB smoke policy and print its manifest.
 #
-# Budget (docs/PROGRESS.md): single-threaded, max_wall_secs <= 300 per run.
+# Budget: single-threaded, max_wall_secs <= 300 per run.
 # The policy is a plumbing smoke test: no strength, Nash or GTO claim.
 # Not invoked by `cargo test`. Extra arguments are passed to pokerbot-train
 # (e.g. --resume artifacts/smoke_20bb.ckpt).

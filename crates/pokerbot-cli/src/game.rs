@@ -7,7 +7,7 @@
 //! [`pokerbot_cfr::infer::Agent`] that receives only `observation(BOT)`; display
 //! is built only from `observation(HUMAN)`.
 //!
-//! Hand history (M-17): every **completed** hand is recorded with
+//! Hand history: every **completed** hand is recorded with
 //! [`SessionRecorder::record_hand`] (which keeps only what the human seat may
 //! know) and saved right away. A hand abandoned by `quit` or end of input is
 //! neither scored nor recorded. A failed save prints a warning and play
@@ -68,7 +68,7 @@ pub fn bot_seed(session: u64) -> u64 {
     derive_seed(session, DOMAIN_BOT, 0)
 }
 
-/// Seed for the adaptive opponent's own sampling RNG (M-20, `--adapt`).
+/// Seed for the adaptive opponent's own sampling RNG (`--adapt`).
 pub fn adapt_seed(session: u64) -> u64 {
     derive_seed(session, DOMAIN_ADAPT, 0)
 }

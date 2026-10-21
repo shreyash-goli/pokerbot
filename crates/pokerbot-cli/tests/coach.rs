@@ -1,4 +1,4 @@
-//! M-18 end-to-end: the between-hands `analysis` and `replay` commands.
+//! End-to-end: the between-hands `analysis` and `replay` commands.
 //! Every run goes through `common::pokerbot_env`, which sandboxes `POKERBOT_HOME`
 //! and `HOME` per child and adds `--no-history` unless a test picks one.
 

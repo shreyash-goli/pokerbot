@@ -1,4 +1,4 @@
-//! M-08: canonicalization, equity, postflop buckets, cache.
+//! Canonicalization, equity, postflop buckets, cache.
 //! Tests are prefixed `equity_` so `cargo test -p pokerbot-cfr equity` selects them.
 
 use std::collections::{HashMap, HashSet};

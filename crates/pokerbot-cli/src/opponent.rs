@@ -92,13 +92,13 @@ pub struct Opponent {
     pub strategy_path: PathBuf,
     /// Checksum of the loaded policy artifact (`None` for the baseline).
     pub checksum: Option<u64>,
-    /// A separate copy of the same policy for the post-hand coach (M-18),
+    /// A separate copy of the same policy for the post-hand coach,
     /// queried with `strategy()` only; `None` for the baseline.
     pub coach: Option<CfrAgent>,
-    /// The experimental adaptive wrapper (M-20), when `--adapt` is on. The
+    /// The experimental adaptive wrapper, when `--adapt` is on. The
     /// same object is also behind `agent`.
     pub adaptive: Option<SharedAdaptive>,
-    /// Difficulty of the CFR policy (M-21); `None` for the baseline.
+    /// Difficulty of the CFR policy; `None` for the baseline.
     pub difficulty: Option<Difficulty>,
 }
 
@@ -125,7 +125,7 @@ impl Agent for AdaptiveSeat {
 }
 
 impl Opponent {
-    /// Wraps the agent in the experimental adaptive layer (M-20), which
+    /// Wraps the agent in the experimental adaptive layer, which
     /// learns from `observed`'s public actions. Adds a banner line.
     pub fn enable_adaptive(&mut self, observed: Seat, seed: u64) -> Result<(), String> {
         let base = std::mem::replace(&mut self.agent, Box::new(BaselineAgent::new(0)));
@@ -156,7 +156,7 @@ impl Opponent {
 }
 
 impl Opponent {
-    /// The label stored with each saved hand (M-17): the agent's label and,
+    /// The label stored with each saved hand: the agent's label and,
     /// for a trained policy, the artifact checksum.
     pub fn history_label(&self) -> pokerbot_analysis::OpponentLabel {
         pokerbot_analysis::OpponentLabel::new(&self.agent.label(), self.checksum)

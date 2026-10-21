@@ -1,4 +1,4 @@
-//! M-11: linear weighting, bounded training, checkpoint/resume.
+//! Linear weighting, bounded training, checkpoint/resume.
 //! Tests are prefixed `checkpoint_` so `cargo test -p pokerbot-cfr checkpoint`
 //! selects them.
 

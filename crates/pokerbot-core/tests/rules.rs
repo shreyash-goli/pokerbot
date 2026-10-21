@@ -1,4 +1,4 @@
-//! M-01 acceptance tests: betting legality, sizing, reopening, settlement and
+//! Acceptance tests: betting legality, sizing, reopening, settlement and
 //! chip-accounting invariants. Expected values are hand-computed in comments
 //! (blinds 1/2 unless stated; "pac" = pot after call = pot + to_call).
 
@@ -424,7 +424,7 @@ fn invariant_checkers() {
 
 // ---------------------------------------------- randomized hand walk ---
 
-/// Minimal reference betting loop (test-only stand-in for M-04) that plays
+/// Minimal reference betting loop (test-only stand-in for the state machine) that plays
 /// random legal actions and asserts invariants after every step.
 fn play_random_hand(cfg: RulesConfig, rng: &mut PokerbotRng) -> [i64; 2] {
     let s0 = cfg.starting_stack;

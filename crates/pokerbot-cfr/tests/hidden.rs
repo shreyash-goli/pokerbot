@@ -1,4 +1,4 @@
-//! M-10 hidden-information tests for the MCCFR trainer.
+//! Hidden-information tests for the MCCFR trainer.
 //! Tests are prefixed `hidden_` so `cargo test -p pokerbot-cfr hidden` selects them.
 
 use pokerbot_cfr::abstraction::key::{CardAbstraction, InfoKey};

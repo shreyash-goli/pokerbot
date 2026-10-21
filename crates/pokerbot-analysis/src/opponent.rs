@@ -1,4 +1,4 @@
-//! Opt-in opponent tendency model (M-20). **Experimental; not evaluated as
+//! Opt-in opponent tendency model. **Experimental; not evaluated as
 //! stronger than the fixed policy.**
 //!
 //! # Information boundary

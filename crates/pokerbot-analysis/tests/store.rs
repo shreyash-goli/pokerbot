@@ -1,4 +1,4 @@
-//! M-17 persistence: restart survival, missing/corrupt files, explicit reset.
+//! Persistence: restart survival, missing/corrupt files, explicit reset.
 //! Every test uses a unique directory under the system temp dir.
 
 mod common;
