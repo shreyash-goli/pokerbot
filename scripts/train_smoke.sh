@@ -3,17 +3,17 @@
 #
 # Budget (docs/PROGRESS.md): single-threaded, max_wall_secs <= 300 per run.
 # The policy is a plumbing smoke test: no strength, Nash or GTO claim.
-# Not invoked by `cargo test`. Extra arguments are passed to mako-train
+# Not invoked by `cargo test`. Extra arguments are passed to pokerbot-train
 # (e.g. --resume artifacts/smoke_20bb.ckpt).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-config="${MAKO_SMOKE_CONFIG:-configs/smoke.toml}"
+config="${POKERBOT_SMOKE_CONFIG:-configs/smoke.toml}"
 
-cargo build --release -p mako-cfr --bin mako-train
-./target/release/mako-train --config "$config" "$@"
+cargo build --release -p pokerbot-cfr --bin pokerbot-train
+./target/release/pokerbot-train --config "$config" "$@"
 
 manifest="$(sed -n 's/^manifest *= *"\(.*\)".*/\1/p' "$config")"
 dir="$(sed -n 's/^dir *= *"\(.*\)".*/\1/p' "$config")"

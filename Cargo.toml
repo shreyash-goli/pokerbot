@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/mako-core",
-    "crates/mako-cfr",
-    "crates/mako-cli",
-    "crates/mako-analysis",
-    "crates/mako-eval",
-    "crates/mako-wasm",
+    "crates/pokerbot-core",
+    "crates/pokerbot-cfr",
+    "crates/pokerbot-cli",
+    "crates/pokerbot-analysis",
+    "crates/pokerbot-eval",
+    "crates/pokerbot-wasm",
 ]
 
 [workspace.package]

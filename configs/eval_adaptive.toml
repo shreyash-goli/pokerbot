@@ -1,4 +1,4 @@
-# Mako fixed-vs-adaptive CFR comparison (M-20 comparator).
+# Pokerbot fixed-vs-adaptive CFR comparison (M-20 comparator).
 #
 # LOCKED before the first run: artifact checksum, seeds, sample size,
 # matchups and adaptation settings are fixed here and must not be tuned after
@@ -10,8 +10,8 @@
 # See docs/EVALUATION.md ("Fixed vs adaptive comparison").
 
 [policy]
-artifact = "artifacts/smoke_20bb.mako"
-expected_checksum = "0xe673b32895f96760"
+artifact = "artifacts/smoke_20bb.pokerbot"
+expected_checksum = "0xd2767c7dad569fdd"
 agent_seed = 1
 
 [rules]

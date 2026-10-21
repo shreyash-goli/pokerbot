@@ -1,8 +1,8 @@
-import { type DepthBB, MakoTable, type ThemeProp } from 'mako-browser';
+import { type DepthBB, PokerbotTable, type ThemeProp } from 'pokerbot-browser';
 import { useState } from 'react';
 
 // Copied from artifacts/ by scripts/copy-policy.mjs (never committed).
-const POLICY_URL = `${import.meta.env.BASE_URL}policy/smoke_20bb.mako`;
+const POLICY_URL = `${import.meta.env.BASE_URL}policy/smoke_20bb.pokerbot`;
 
 function initialSeed(): bigint {
   // ?seed=123 makes a session reproducible (and is used by the smoke test).
@@ -28,7 +28,7 @@ export function App() {
         fontFamily: "ui-monospace, Menlo, Consolas, monospace",
       }}
     >
-      <MakoTable policyUrl={POLICY_URL} depthBB={depthBB} seed={seed} theme={theme} />
+      <PokerbotTable policyUrl={POLICY_URL} depthBB={depthBB} seed={seed} theme={theme} />
       <div style={{ maxWidth: 760, margin: '10px auto 0', display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
         <span>Seed {seed.toString()}</span>
         <button type="button" onClick={() => setSeed(BigInt(Math.floor(Math.random() * 2 ** 32)))}>

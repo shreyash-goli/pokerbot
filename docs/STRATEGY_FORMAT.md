@@ -1,15 +1,15 @@
-# Mako strategy artifact format (`.mako`), version 1
+# Pokerbot strategy artifact format (`.pokerbot`), version 1
 
 Status: specification for M-12. Implemented by
-`crates/mako-cfr/src/artifact.rs`, tested by `crates/mako-cfr/tests/artifact.rs`.
+`crates/pokerbot-cfr/src/artifact.rs`, tested by `crates/pokerbot-cfr/tests/artifact.rs`.
 This is an original format, written independently. No other
 poker project's format or code was used.
 
-A `.mako` file stores the **average strategy** of an external-sampling MCCFR
+A `.pokerbot` file stores the **average strategy** of an external-sampling MCCFR
 table (M-10/M-11), quantized per legal action. It also stores the metadata
 needed to refuse use with the wrong game. It does not store regrets; resumable
 training uses the separate checkpoint format (`checkpoint.rs`, magic
-`MAKOCKPT`).
+`PKBTCKPT`).
 
 A policy loaded from an artifact approximates an equilibrium of the
 *abstract* game (169 preflop classes, equity buckets, six actions) for one
@@ -23,7 +23,7 @@ terminator.
 
 | # | Field | Type | Notes |
 |---|---|---|---|
-| 1 | magic | 8 bytes | `MAKOSTRT` |
+| 1 | magic | 8 bytes | `PKBTSTRT` |
 | 2 | format version | `u16` | `1` |
 | 3 | rules-spec length | `u8` | |
 | 4 | rules spec | bytes | `GAME_RULES v1` (docs/GAME_RULES.md) |
@@ -36,7 +36,7 @@ terminator.
 | 11 | trainer seed | `u64` | |
 | 12 | iterations | `u64` | completed training iterations |
 | 13 | trainer id length | `u16` | ≤ 4096 |
-| 14 | trainer id | bytes | e.g. `mako-cfr 0.1.0 es-mccfr` |
+| 14 | trainer id | bytes | e.g. `pokerbot-cfr 0.1.0 es-mccfr` |
 | 15 | label length | `u16` | ≤ 4096 |
 | 16 | label | bytes | free text |
 | 17 | entry count `n` | `u32` | |
@@ -80,7 +80,7 @@ chooses the fallback.
 The reader is pure (no file system) and runs the same checks natively and in
 wasm. It rejects the input, with a specific error, if any of these fail:
 
-1. Magic is `MAKOSTRT`.
+1. Magic is `PKBTSTRT`.
 2. Format version is supported (currently only `1`).
 3. Checksum matches (corruption detection only: FNV-1a is **not** a security
    measure, and anyone can recompute it).

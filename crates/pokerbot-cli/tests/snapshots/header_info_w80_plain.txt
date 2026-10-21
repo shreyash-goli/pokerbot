@@ -1,0 +1,10 @@
+  [ P O K E R B O T ]   Pokerbot 0.1.0 | heads-up no-limit hold'em
+--------------------------------------------------------------------------------
+Opponent: CFR policy -- cfr 20BB (500k it): smoke: trained for plumbing, not
+    competition
+  artifact artifacts/smoke_20bb.pokerbot | checksum 0xd2767c7dad569fdd | 39741
+    infosets
+Session seed 7 | 5 hand(s) | 20 BB deep (40 chips) | blinds 1/2
+Replay: pokerbot --seed 7 --hands 5 --depth 20 --bot auto --strategy \
+    artifacts/smoke_20bb.pokerbot
+Type 'help' at any prompt for the commands.

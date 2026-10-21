@@ -1,6 +1,6 @@
-# Mako policy evaluation (M-19)
+# Pokerbot policy evaluation (M-19)
 
-`mako-eval` (crate `crates/mako-eval`) measures a trained `.mako` policy by
+`pokerbot-eval` (crate `crates/pokerbot-eval`) measures a trained `.pokerbot` policy by
 playing it against fixed rule-bot baselines and against itself. It reports
 BB/100 with 95% confidence intervals, sample sizes, per-position results and
 the policy's fallback (unseen info set) rate. It then applies a promotion gate
@@ -19,8 +19,8 @@ not evidence of strength against capable opponents.
 ## How to run
 
 ```sh
-cargo run --release -p mako-eval -- --smoke                  # configs/eval_smoke.toml
-cargo run --release -p mako-eval -- --config <file.toml>     # any eval config
+cargo run --release -p pokerbot-eval -- --smoke                  # configs/eval_smoke.toml
+cargo run --release -p pokerbot-eval -- --config <file.toml>     # any eval config
     [--artifact <path>]   # override [policy] artifact
     [--pairs <n>]         # override deal_pairs, 1..=200000 (each pair = 2 hands)
     [--json <out.json>]   # machine-readable report (deterministic, no timings)
@@ -99,7 +99,7 @@ of pair `i`, and let `BB` be the big blind in chips.
   the agent's own `InferStats` (`tests/cli.rs`).
 
 ### Train/test separation
-Training (`mako-train`) samples deals from its own trainer RNG stream, seeded
+Training (`pokerbot-train`) samples deals from its own trainer RNG stream, seeded
 with the training seed. Evaluation deals come from `Deck::from_seed` over a
 separately seeded SplitMix64 stream. The harness refuses an eval `base_seed`
 equal to the artifact's training seed or abstraction seed. This keeps the
@@ -126,7 +126,7 @@ these baselines.
 
 ## Smoke results (locked `configs/eval_smoke.toml`)
 
-These numbers are from the artifact with checksum `0xe673b32895f96760`
+These numbers are from the artifact with checksum `0xd2767c7dad569fdd`
 (500k iterations, `smoke: trained for plumbing, not competition`). The run
 used eval seed 4157113009 and 2,000 pairs (4,000 hands) per matchup.
 
@@ -162,13 +162,13 @@ against weak rule bots only.
 
 `configs/eval_adaptive.toml` (`mode = "comparison"`) runs the fixed CFR
 policy (`cfr`) and the opt-in adaptive wrapper (`adaptive_cfr`, see
-`crates/mako-analysis/src/opponent.rs`) against the same opponents on the
+`crates/pokerbot-analysis/src/opponent.rs`) against the same opponents on the
 **same deal stream**. **Adaptive mode is experimental; this comparison does
 not establish general strength.** There is no `[gate]` and no verdict, and
 the config parser rejects a `[gate]` section in comparison mode.
 
 ```sh
-cargo run --release -p mako-eval -- --config configs/eval_adaptive.toml [--json out.json]
+cargo run --release -p pokerbot-eval -- --config configs/eval_adaptive.toml [--json out.json]
 ```
 
 ### Design
@@ -200,10 +200,10 @@ cargo run --release -p mako-eval -- --config configs/eval_adaptive.toml [--json 
 
 ### Results
 
-Every run below uses artifact `0xe673b32895f96760`, 20,000 pairs = 40,000
+Every run below uses artifact `0xd2767c7dad569fdd`, 20,000 pairs = 40,000
 hands per matchup, and a release build. Between configs only the eval
 `base_seed` differs, and between rule versions only
-`crates/mako-analysis/src/opponent.rs` changed. Run A and run C use
+`crates/pokerbot-analysis/src/opponent.rs` changed. Run A and run C use
 `configs/eval_adaptive.toml` (seed 2718281829). Run B, the primary result
 for the revised rule, uses `configs/eval_adaptive_v2.toml` (seed
 3141592653). That config is identical except for `base_seed` and was
@@ -291,7 +291,7 @@ Run C agrees with run B to within about 1 BB/100 on every difference.
 
 ### JSON report fields
 
-`--json` writes one object (`"format": "mako-eval-report v1"`), with no
+`--json` writes one object (`"format": "pokerbot-eval-report v1"`), with no
 timings. The keys added for the comparator are:
 
 * `mode`: `"promotion"` or `"comparison"`.

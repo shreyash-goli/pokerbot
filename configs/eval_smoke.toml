@@ -1,4 +1,4 @@
-# Mako evaluation smoke configuration (M-19).
+# Pokerbot evaluation smoke configuration (M-19).
 #
 # LOCKED before running: seeds, sample size, opponents and gate thresholds
 # are fixed here and must not be tuned after looking at results. Change them
@@ -9,10 +9,10 @@
 # baselines only; it computes no exploitability. See docs/EVALUATION.md.
 
 [policy]
-artifact = "artifacts/smoke_20bb.mako"
+artifact = "artifacts/smoke_20bb.pokerbot"
 # Checksum of the deterministic smoke artifact (from its manifest,
 # artifact_fnv1a64). A retrained or different artifact fails the gate.
-expected_checksum = "0xe673b32895f96760"
+expected_checksum = "0xd2767c7dad569fdd"
 agent_seed = 1                  # agents' own draws; the harness samples with its own streams
 
 [rules]

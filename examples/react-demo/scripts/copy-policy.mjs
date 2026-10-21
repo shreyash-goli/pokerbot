@@ -1,13 +1,13 @@
 // Copies the locally trained 20BB smoke policy into public/policy/ for the
-// demo. The .mako file is a generated artifact and is never committed
-// (*.mako is gitignored). Train it with scripts/train_smoke.sh.
+// demo. The .pokerbot file is a generated artifact and is never committed
+// (*.pokerbot is gitignored). Train it with scripts/train_smoke.sh.
 import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = join(here, '../../../artifacts/smoke_20bb.mako');
-const dest = join(here, '../public/policy/smoke_20bb.mako');
+const src = join(here, '../../../artifacts/smoke_20bb.pokerbot');
+const dest = join(here, '../public/policy/smoke_20bb.pokerbot');
 
 if (!existsSync(src)) {
   console.warn(

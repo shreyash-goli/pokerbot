@@ -4,7 +4,7 @@ dist/
 pkg/
 node_modules/
 /.next/
-*.mako
+*.pokerbot
 *.ckpt
 *.cache
 *.log

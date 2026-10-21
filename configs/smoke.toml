@@ -1,4 +1,4 @@
-# Mako smoke-training configuration (M-13).
+# Pokerbot smoke-training configuration (M-13).
 #
 # Purpose: exercise the full train -> checkpoint -> export -> load pipeline
 # with a small, reproducible, from-scratch MCCFR policy at 20 big blinds.
@@ -12,7 +12,7 @@ small_blind = 1
 big_blind = 2
 
 [abstraction]
-# Equity-vs-random-hand buckets (coarse; see crates/mako-cfr/src/abstraction/postflop.rs).
+# Equity-vs-random-hand buckets (coarse; see crates/pokerbot-cfr/src/abstraction/postflop.rs).
 flop_buckets = 8
 turn_buckets = 8
 river_buckets = 8
@@ -34,7 +34,7 @@ cache_capacity = 262_144
 
 [output]
 dir = "artifacts"
-artifact = "smoke_20bb.mako"
+artifact = "smoke_20bb.pokerbot"
 checkpoint = "smoke_20bb.ckpt"
 manifest = "smoke_20bb.manifest.json"
 label = "smoke: trained for plumbing, not competition"

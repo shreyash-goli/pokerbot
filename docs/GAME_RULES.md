@@ -1,6 +1,6 @@
-# Mako game rules (heads-up no-limit hold'em, six-action abstraction)
+# Pokerbot game rules (heads-up no-limit hold'em, six-action abstraction)
 
-Status: specification for M-01, implemented by `crates/mako-core/src/rules.rs`
+Status: specification for M-01, implemented by `crates/pokerbot-core/src/rules.rs`
 (betting/accounting) and `card.rs`/`deck.rs`/`rng.rs` (M-02). The hand state
 machine (M-04) must follow this document. Written independently from the
 standard public rules of Texas hold'em; no code or text from other poker
@@ -33,7 +33,7 @@ projects was used.
 ## 3. Dealing and streets
 
 - Shuffle: Fisher–Yates over the ordered deck (index order `2c 2d 2h 2s … As`,
-  `index = rank*4 + suit`) using the seeded `MakoRng` (xoshiro256**, seeded via
+  `index = rank*4 + suit`) using the seeded `PokerbotRng` (xoshiro256**, seeded via
   SplitMix64; unbiased bounded draws by Lemire's method). Same seed ⇒ same
   deck on every platform.
 - Dealing order (recommended for M-04): hole cards one at a time, alternating,

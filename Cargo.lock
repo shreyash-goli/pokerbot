@@ -15,49 +15,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "mako-analysis"
+name = "pokerbot-analysis"
 version = "0.1.0"
 dependencies = [
- "mako-cfr",
- "mako-core",
+ "pokerbot-cfr",
+ "pokerbot-core",
 ]
 
 [[package]]
-name = "mako-cfr"
+name = "pokerbot-cfr"
 version = "0.1.0"
 dependencies = [
- "mako-core",
+ "pokerbot-core",
 ]
 
 [[package]]
-name = "mako-cli"
+name = "pokerbot-cli"
 version = "0.1.0"
 dependencies = [
- "mako-analysis",
- "mako-cfr",
- "mako-core",
+ "pokerbot-analysis",
+ "pokerbot-cfr",
+ "pokerbot-core",
 ]
 
 [[package]]
-name = "mako-core"
+name = "pokerbot-core"
 version = "0.1.0"
 
 [[package]]
-name = "mako-eval"
+name = "pokerbot-eval"
 version = "0.1.0"
 dependencies = [
- "mako-analysis",
- "mako-cfr",
- "mako-core",
+ "pokerbot-analysis",
+ "pokerbot-cfr",
+ "pokerbot-core",
 ]
 
 [[package]]
-name = "mako-wasm"
+name = "pokerbot-wasm"
 version = "0.1.0"
 dependencies = [
- "mako-cfr",
- "mako-cli",
- "mako-core",
+ "pokerbot-cfr",
+ "pokerbot-cli",
+ "pokerbot-core",
  "wasm-bindgen",
 ]
 

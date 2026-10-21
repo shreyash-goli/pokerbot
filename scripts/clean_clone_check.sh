@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clean-clone check for Mako (M-24).
+# Clean-clone check for Pokerbot (M-24).
 #
 #   scripts/clean_clone_check.sh [--include-working-tree] [ci_local.sh args...]
 #
@@ -15,7 +15,7 @@
 #                           Only read-only git commands are used. Files
 #                           deleted in the working tree stay as in HEAD.
 #
-# The gitignored smoke policy artifacts/smoke_20bb.mako (+ manifest) is
+# The gitignored smoke policy artifacts/smoke_20bb.pokerbot (+ manifest) is
 # copied in from this repository if present -- this is announced loudly,
 # because a true clean clone would not have it (ci_local.sh then skips the
 # steps that need it, or trains it with --with-smoke-training).
@@ -43,7 +43,7 @@ if (( free_kb < need_kb )); then
 fi
 echo "clean_clone_check: $((free_kb / 1024)) MiB free on $tmp_base"
 
-work="$(mktemp -d "$tmp_base/mako-clean-clone.XXXXXX")"
+work="$(mktemp -d "$tmp_base/pokerbot-clean-clone.XXXXXX")"
 cleanup() {
   echo "clean_clone_check: deleting $work (sources + target)"
   rm -rf "$work"
@@ -65,16 +65,16 @@ if [[ $overlay == 1 ]]; then
   done < <(git ls-files --modified --others --exclude-standard)
 fi
 
-if [[ -s artifacts/smoke_20bb.mako ]]; then
+if [[ -s artifacts/smoke_20bb.pokerbot ]]; then
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo "!! NOTE: copying the gitignored artifacts/smoke_20bb.mako (+ manifest)"
+  echo "!! NOTE: copying the gitignored artifacts/smoke_20bb.pokerbot (+ manifest)"
   echo "!! from this repository into the clean clone. It is NOT in git."
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   mkdir -p "$work/src/artifacts"
-  cp -p artifacts/smoke_20bb.mako "$work/src/artifacts/"
+  cp -p artifacts/smoke_20bb.pokerbot "$work/src/artifacts/"
   [[ -f artifacts/smoke_20bb.manifest.json ]] && cp -p artifacts/smoke_20bb.manifest.json "$work/src/artifacts/"
 else
-  echo "clean_clone_check: no artifacts/smoke_20bb.mako to copy; ci_local.sh will skip loudly"
+  echo "clean_clone_check: no artifacts/smoke_20bb.pokerbot to copy; ci_local.sh will skip loudly"
 fi
 
 export CARGO_TARGET_DIR="$work/target"

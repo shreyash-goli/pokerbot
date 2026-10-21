@@ -1,0 +1,9 @@
+\e[38;5;137m╔═ \e[0m\e[1;38;5;222mPokerbot\e[0m\e[38;5;137m ══════════════════════════════════════════════\e[0m\e[38;5;137m Hand 2/5 · Preflop ═╗\e[0m
+\e[38;5;137m║\e[0m   Bot  BB     \e[38;5;180;48;5;94m[▓▓]\e[0m\e[38;5;180;48;5;94m[▓▓]\e[0m  stack   38  bet    2                                 \e[38;5;137m║\e[0m
+\e[38;5;137m║\e[0m                                                                              \e[38;5;137m║\e[0m
+\e[38;5;137m║\e[0m         Board \e[38;5;95m[··]\e[0m\e[38;5;95m[··]\e[0m\e[38;5;95m[··]\e[0m\e[38;5;95m[··]\e[0m\e[38;5;95m[··]\e[0m   Pot \e[1;38;5;230m3\e[0m                                   \e[38;5;137m║\e[0m
+\e[38;5;137m║\e[0m                                                                              \e[38;5;137m║\e[0m
+\e[38;5;137m║\e[0m \e[1;38;5;179m▸\e[0m You  BTN/SB \e[1;38;5;235;48;5;230m[9♣]\e[0m\e[1;38;5;124;48;5;230m[8♥]\e[0m  stack   39  bet    1                                 \e[38;5;137m║\e[0m
+\e[38;5;137m╚═ vs \e[0m\e[38;5;187mcfr 20BB (500k it): smoke: trained for plumbing, not competition\e[0m\e[38;5;137m ════════╝\e[0m
+  \e[1;38;5;230mOptions:\e[0m \e[1;38;5;179m[f]\e[0m fold   \e[1;38;5;179m[c]\e[0m call 1   \e[1;38;5;179m[h]\e[0m raise to 4 (half pot)
+           \e[1;38;5;179m[p]\e[0m raise to 6 (pot)   \e[1;38;5;179m[a]\e[0m all-in to 40

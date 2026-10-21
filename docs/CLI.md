@@ -1,15 +1,15 @@
-# `mako` terminal game
+# `pokerbot` terminal game
 
-`mako` plays heads-up no-limit hold'em in the terminal: you against a bot,
+`pokerbot` plays heads-up no-limit hold'em in the terminal: you against a bot,
 for a fixed number of hands, with stacks reset every hand and the button
-alternating. The engine (`mako-core`) decides every legal action; the
+alternating. The engine (`pokerbot-core`) decides every legal action; the
 terminal only ever submits an action taken from the engine's legal list.
 The UI is original work written for this project; its warm
 cream/sepia look is inspired by a reference screenshot, not copied from any
 other program.
 
 ```
-cargo run -p mako-cli -- --depth 20 --hands 3 --seed 7
+cargo run -p pokerbot-cli -- --depth 20 --hands 3 --seed 7
 ```
 
 ## Options
@@ -20,7 +20,7 @@ cargo run -p mako-cli -- --depth 20 --hands 3 --seed 7
 | `--hands <n>` | Hands to play, `1..=100000` (default 10). |
 | `--depth <20\|50\|100>` | Starting stack in big blinds at blinds 1/2 (40, 100 or 200 chips). Default 20. |
 | `--bot <auto\|cfr\|baseline>` | Opponent (default `auto`); see [Opponents](#opponents). |
-| `--strategy <path>` | Policy artifact. Default `artifacts/smoke_<depth>bb.mako`, relative to the working directory. |
+| `--strategy <path>` | Policy artifact. Default `artifacts/smoke_<depth>bb.pokerbot`, relative to the working directory. |
 | `--auto <checkcall\|random>` | Plays *your* seat with a scripted policy and reads no input (tests, demos). |
 | `--color <auto\|never\|16\|256\|truecolor>` | Colour depth (default `auto`). |
 | `--no-color` | Same as `--color never`. |
@@ -28,8 +28,8 @@ cargo run -p mako-cli -- --depth 20 --hands 3 --seed 7
 | `--width <48..240>` | Layout width in columns (default: `COLUMNS`, else 80). |
 | `--difficulty <training\|balanced\|challenging>` | How the CFR bot's trained mix is blended with uniform-random legal play (default `challenging` = as-is); see [Difficulty](#difficulty). |
 | `--adapt` | Experimental, off by default: the bot conservatively adapts to your public tendencies (never your cards); not evaluated as stronger. |
-| `--history <path>` / `--no-history` | Where completed hands are saved (default `$MAKO_HOME/session-history.txt`, else `~/.mako/`), or keep stats in memory only. |
-| `--reset-stats` | Delete the saved Mako history file and exit. |
+| `--history <path>` / `--no-history` | Where completed hands are saved (default `$POKERBOT_HOME/session-history.txt`, else `~/.pokerbot/`), or keep stats in memory only. |
+| `--reset-stats` | Delete the saved Pokerbot history file and exit. |
 | `--fast` | No pauses between bot actions. |
 | `-h`, `--help` / `-V`, `--version` | Usage / version. |
 
@@ -48,7 +48,7 @@ table and in `help`; there is never a silent substitution.
   policy: not competitive, not GTO / Nash*. Situations missing from the
   artifact are played uniformly at random over the legal actions; these
   decisions are counted as *explicit fallback* in `stats`. If the artifact
-  is missing, unreadable, for another depth, or corrupt, `mako` exits with
+  is missing, unreadable, for another depth, or corrupt, `pokerbot` exits with
   status 2 and says why.
 * `--bot baseline`: an **untrained**, seeded, weighted-random legal bot,
   labelled `baseline (untrained, random legal)`.
@@ -82,7 +82,7 @@ fallback, counted in `stats`. The banner and `stats` show the difficulty,
 and the replay hint includes `--difficulty`.
 
 These modes are blends of a plumbing-grade smoke policy; relative strength
-has not been benchmarked unless shown by `mako-eval`. "Training" means
+has not been benchmarked unless shown by `pokerbot-eval`. "Training" means
 "more random", not "easier by a measured amount".
 
 With `--adapt`, the order is: trained policy → difficulty blend → adaptive
@@ -152,13 +152,13 @@ non-empty of `LC_ALL`, `LC_CTYPE`, `LANG` names UTF-8; otherwise ASCII
 (`As`, `Kh`, `+=|` frames). All glyphs used are one column wide.
 
 Width: `--width`, else `COLUMNS`, else 80, clamped to 48..240. Many shells
-do not export `COLUMNS` to programs; run `COLUMNS=$COLUMNS mako ...` or pass
+do not export `COLUMNS` to programs; run `COLUMNS=$COLUMNS pokerbot ...` or pass
 `--width`. Below 100 columns the compact layout is used (designed for
 80x24: one table screen is at most 16 lines); from 100 columns the table
 gets a side pane with the action log. No line is ever wider than the
 chosen width.
 
-Pauses: in interactive play on a terminal, `mako` pauses 350 ms before
+Pauses: in interactive play on a terminal, `pokerbot` pauses 350 ms before
 each bot action and new street. `--fast`, `--auto`, and non-terminal
 input or output skip all pauses.
 
@@ -169,8 +169,8 @@ the same decks, the same bot sampling and the same scripted player, so the
 same inputs give an identical transcript (given the same artifact):
 
 ```
-Replay: mako --seed 7 --hands 3 --depth 20 --bot auto --strategy \
-    artifacts/smoke_20bb.mako --difficulty challenging --auto checkcall
+Replay: pokerbot --seed 7 --hands 3 --depth 20 --bot auto --strategy \
+    artifacts/smoke_20bb.pokerbot --difficulty challenging --auto checkcall
 ```
 
 Long commands wrap with a trailing `\`, so they paste into a shell as-is.
@@ -180,7 +180,7 @@ Long commands wrap with a trailing `\`, so they paste into a shell as-is.
 ```
 -- Hand 1 of 3 | button: You ---------------------------------------------------
   Blinds: You 1 (SB) | Bot 2 (BB) | your cards [Ad][Ah]
-+= Mako ================================================== Hand 1/3 | Preflop =+
++= Pokerbot ================================================== Hand 1/3 | Preflop =+
 |   Bot  BB     [##][##]  stack   38  bet    2                                 |
 |                                                                              |
 |         Board [--][--][--][--][--]   Pot 3                                   |
@@ -197,9 +197,9 @@ Long commands wrap with a trailing `\`, so they paste into a shell as-is.
 
 `>` marks the player to act. Golden renderings of every street, a
 showdown, a fold and the session header, at 80 and 120 columns, in plain
-and 256-colour modes, live in `crates/mako-cli/tests/snapshots/`
-(regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p mako-cli --test snapshots`).
+and 256-colour modes, live in `crates/pokerbot-cli/tests/snapshots/`
+(regenerate with `UPDATE_SNAPSHOTS=1 cargo test -p pokerbot-cli --test snapshots`).
 
 ## Not included
 
-`mako` has no `restart` command; everything listed in `help` works.
+`pokerbot` has no `restart` command; everything listed in `help` works.

@@ -1,0 +1,26 @@
+{
+  "name": "pokerbot-browser",
+  "version": "0.1.0",
+  "description": "Browser client for the Pokerbot heads-up hold'em engine: typed DTOs, a Web Worker client and a React <PokerbotTable /> over the pokerbot-wasm build",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "build:wasm": "wasm-pack build ../../crates/pokerbot-wasm --target web --out-dir ../../packages/pokerbot-browser/pkg --release",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --experimental-strip-types test/wording.test.ts"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

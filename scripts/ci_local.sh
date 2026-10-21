@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local CI for Mako (M-24): the same steps as .github/workflows/ci.yml.
+# Full local CI for Pokerbot (M-24).
 #
 #   scripts/ci_local.sh [--with-smoke-training] [--step <name>]...
 #
@@ -9,20 +9,20 @@
 #   clippy         cargo clippy --workspace --all-targets -- -D warnings
 #   test           cargo test --workspace
 #   tasks          python3 tools/validate_tasks.py + python unittests (tests/)
-#   bins           debug build of mako, mako-train, mako-eval
-#   smoke-artifact artifacts/smoke_20bb.mako present? Otherwise trained by
+#   bins           debug build of pokerbot, pokerbot-train, pokerbot-eval
+#   smoke-artifact artifacts/smoke_20bb.pokerbot present? Otherwise trained by
 #                  scripts/train_smoke.sh with --with-smoke-training (release
 #                  build, ~2 min), else SKIPPED LOUDLY
-#   eval-smoke     mako-eval --smoke --require-promote (pinned smoke artifact
+#   eval-smoke     pokerbot-eval --smoke --require-promote (pinned smoke artifact
 #                  must PROMOTE under the locked gate); needs smoke-artifact
 #   wasm-build     wasm-pack build (bundler + nodejs) into $TARGET/wasm-*
 #   policy-load    tests/e2e/policy_load.sh: ci_tiny trained by the
-#                  mako-train binary loads in mako / mako-eval / wasm (Node)
+#                  pokerbot-train binary loads in pokerbot / pokerbot-eval / wasm (Node)
 #                  and is rejected at the wrong depth in all three
-#   wasm-smoke     node crates/mako-wasm/smoke/smoke.mjs (with the smoke
+#   wasm-smoke     node crates/pokerbot-wasm/smoke/smoke.mjs (with the smoke
 #                  artifact if present: its CFR digest must equal the value
 #                  recorded in docs/WEB_INTEGRATION.md)
-#   browser        npm ci in packages/mako-browser, then in examples/react-demo
+#   browser        npm ci in packages/pokerbot-browser, then in examples/react-demo
 #                  npm ci && npm run build && npm run smoke (headless local
 #                  Google Chrome via playwright-core;
 #                  needs the smoke artifact). SKIPPED LOUDLY without npm,
@@ -39,9 +39,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 target="${CARGO_TARGET_DIR:-$root/target}"
 bin="$target/debug"
-smoke_art="$root/artifacts/smoke_20bb.mako"
+smoke_art="$root/artifacts/smoke_20bb.pokerbot"
 # CFR check/call digest of the pinned smoke artifact (docs/WEB_INTEGRATION.md).
-smoke_digest="0x2580963c01fbe8fc"
+smoke_digest="0x62bed279a8824406"
 
 with_training=0
 only=()
@@ -79,26 +79,26 @@ step_tasks() {
   python3 tools/validate_tasks.py
   python3 -m unittest discover -s tests -v
 }
-step_bins() { cargo build -p mako-cli -p mako-cfr -p mako-eval --bins; }
+step_bins() { cargo build -p pokerbot-cli -p pokerbot-cfr -p pokerbot-eval --bins; }
 step_smoke_artifact() {
   if [[ -s "$smoke_art" ]]; then
     echo "smoke artifact present: $smoke_art ($(wc -c <"$smoke_art") bytes)"
   elif [[ $with_training == 1 ]]; then
     scripts/train_smoke.sh
   else
-    loud_skip "artifacts/smoke_20bb.mako is absent (gitignored). Pass --with-smoke-training" \
+    loud_skip "artifacts/smoke_20bb.pokerbot is absent (gitignored). Pass --with-smoke-training" \
       "to train it (scripts/train_smoke.sh, ~2 min release build). Steps that need it" \
       "(eval-smoke, the real-artifact checks in wasm-smoke, browser) will be skipped too."
   fi
 }
 step_eval_smoke() {
-  [[ -s "$smoke_art" ]] || { loud_skip "eval-smoke: no artifacts/smoke_20bb.mako"; return; }
-  "$bin/mako-eval" --smoke --require-promote
+  [[ -s "$smoke_art" ]] || { loud_skip "eval-smoke: no artifacts/smoke_20bb.pokerbot"; return; }
+  "$bin/pokerbot-eval" --smoke --require-promote
 }
 step_wasm_build() {
   command -v wasm-pack >/dev/null || { echo "wasm-pack is required (cargo install wasm-pack)"; return 1; }
-  wasm-pack build crates/mako-wasm --target bundler --out-dir "$target/wasm-bundler"
-  wasm-pack build crates/mako-wasm --target nodejs --out-dir "$target/wasm-node"
+  wasm-pack build crates/pokerbot-wasm --target bundler --out-dir "$target/wasm-bundler"
+  wasm-pack build crates/pokerbot-wasm --target nodejs --out-dir "$target/wasm-node"
 }
 step_policy_load() {
   rm -rf "$logdir/policy-load"
@@ -106,13 +106,13 @@ step_policy_load() {
 }
 step_wasm_smoke() {
   if [[ -s "$smoke_art" ]]; then
-    node crates/mako-wasm/smoke/smoke.mjs "$target/wasm-node" "$smoke_art" | tee "$logdir/wasm-smoke.out"
+    node crates/pokerbot-wasm/smoke/smoke.mjs "$target/wasm-node" "$smoke_art" | tee "$logdir/wasm-smoke.out"
     grep -q "cfr check/call digest seed 7 x20: $smoke_digest" "$logdir/wasm-smoke.out" || {
       echo "wasm CFR digest differs from the recorded native digest $smoke_digest"
       return 1
     }
   else
-    node crates/mako-wasm/smoke/smoke.mjs "$target/wasm-node"
+    node crates/pokerbot-wasm/smoke/smoke.mjs "$target/wasm-node"
     loud_skip "wasm-smoke ran without the smoke artifact (baseline only); the ci_tiny" \
       "artifact was exercised by policy-load"
   fi
@@ -120,11 +120,11 @@ step_wasm_smoke() {
 step_browser() {
   command -v npm >/dev/null || { loud_skip "browser: npm not installed"; return; }
   have_chrome || { loud_skip "browser: Google Chrome not found (local-only step)"; return; }
-  [[ -s "$smoke_art" ]] || { loud_skip "browser: needs artifacts/smoke_20bb.mako"; return; }
-  # The demo typechecks packages/mako-browser's TypeScript sources, which
+  [[ -s "$smoke_art" ]] || { loud_skip "browser: needs artifacts/smoke_20bb.pokerbot"; return; }
+  # The demo typechecks packages/pokerbot-browser's TypeScript sources, which
   # resolve react/@types/react from that package's own node_modules: install
   # both lockfiles (a fresh clone has neither).
-  (cd packages/mako-browser && npm ci)
+  (cd packages/pokerbot-browser && npm ci)
   (cd examples/react-demo && npm ci && npm run build && npm run smoke)
 }
 

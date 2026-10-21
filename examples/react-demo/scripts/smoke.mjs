@@ -43,7 +43,7 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.wasm': 'application/wasm',
-  '.mako': 'application/octet-stream',
+  '.pokerbot': 'application/octet-stream',
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
 };
@@ -85,7 +85,7 @@ function watch(page, label, allowed = null) {
   });
 }
 
-const table = '[data-testid="mako-table"]';
+const table = '[data-testid="pokerbot-table"]';
 
 /** Waits until the engine is idle at a human decision or a finished hand. */
 async function settled(page, previousHtml) {
@@ -111,9 +111,9 @@ async function settled(page, previousHtml) {
   return status;
 }
 
-// CLI wording: "You call 1", "Mako bets 2 (to 4, half pot)", "You raise to 6 (pot)".
+// CLI wording: "You call 1", "Pokerbot bets 2 (to 4, half pot)", "You raise to 6 (pot)".
 const LOG_LINE =
-  /^(You|Mako) (folds?|checks?|calls? \d+|bets? \d+( \((to \d+, )?(half pot|pot|all-in)\))?|raises? to \d+ \((half pot|pot|all-in)\))$/;
+  /^(You|Pokerbot) (folds?|checks?|calls? \d+|bets? \d+( \((to \d+, )?(half pot|pot|all-in)\))?|raises? to \d+ \((half pot|pot|all-in)\))$/;
 async function checkLog(page, label) {
   const lines = await page.$$eval('[data-testid="log"] li', (ls) => ls.map((l) => l.textContent.trim()));
   for (const l of lines) check(LOG_LINE.test(l), `${label}: unexpected log wording "${l}"`);
@@ -131,7 +131,7 @@ function cardForms(code) {
   const suits = { c: ['♣', 'clubs'], d: ['♦', 'diamonds'], h: ['♥', 'hearts'], s: ['♠', 'spades'] };
   const r = ranks[code[0]] ?? code[0];
   const [sym, name] = suits[code[1]];
-  return [`data-card="${code}"`, `${r} of ${name}`, `>${r}</span><span class="mako-suit">${sym}<`];
+  return [`data-card="${code}"`, `${r} of ${name}`, `>${r}</span><span class="pokerbot-suit">${sym}<`];
 }
 
 /** Plays one hand by clicking legal buttons; returns its summary. */
@@ -167,7 +167,7 @@ async function playHand(page, label, shotPrefix) {
   } else {
     check(revealed.length === 0, `${label}: bot cards shown after a fold`);
   }
-  check(/You win|Mako wins|Split pot/.test(await page.textContent('[data-testid="result"]')), `${label}: result text`);
+  check(/You win|Pokerbot wins|Split pot/.test(await page.textContent('[data-testid="result"]')), `${label}: result text`);
   if (shotPrefix && showdown) {
     await page.screenshot({ path: `${shotPrefix}-showdown.png`, fullPage: true });
     await page.locator('[data-testid="log"]').screenshot({ path: `${shotPrefix}-log.png` });
@@ -209,7 +209,7 @@ try {
     hands++;
     decisions += r.decisions;
     if (r.showdown) showdowns++;
-    // A hand can end before any human decision (Mako folds first to act),
+    // A hand can end before any human decision (Pokerbot folds first to act),
     // so compare the session count right after each hand.
     score = await desk.textContent('[data-testid="score"]');
     const played = Number(/\((\d+) played\)/.exec(score)?.[1]);
@@ -234,7 +234,7 @@ try {
   const overflow = await mob.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     innerWidth: window.innerWidth,
-    wide: [...document.querySelectorAll('[data-testid="mako-table"] *')]
+    wide: [...document.querySelectorAll('[data-testid="pokerbot-table"] *')]
       .filter((e) => e.getBoundingClientRect().right > window.innerWidth + 0.5)
       .map((e) => e.className || e.tagName)
       .slice(0, 5),
@@ -254,7 +254,7 @@ try {
   // ---------------------------------------- missing policy: no silent swap
   const np = await browser.newPage();
   watch(np, 'no-policy', /404|Failed to load resource/);
-  await np.route('**/*.mako', (r) => r.fulfill({ status: 404, body: 'missing' }));
+  await np.route('**/*.pokerbot', (r) => r.fulfill({ status: 404, body: 'missing' }));
   await np.goto(`${base}?seed=3`);
   await np.waitForSelector(`${table}[data-status="error"]`);
   const err = await np.textContent('[data-testid="load-error"]');

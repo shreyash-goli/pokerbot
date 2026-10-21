@@ -1,6 +1,6 @@
 # pokerbot
 
-An independently implemented heads-up no-limit Texas Hold'em game ("Mako"):
+An independently implemented heads-up no-limit Texas Hold'em game:
 a Rust rules engine, a from-scratch external-sampling MCCFR bot (with linear strategy averaging), a
 retro terminal UI, an evaluation harness, and a WebAssembly bridge with a
 React component for embedding in a website.
@@ -20,11 +20,11 @@ Requires [rustup](https://rustup.rs). `rust-toolchain.toml` pins the toolchain
 
 ```sh
 cargo test --workspace                     # all unit / integration / e2e tests
-scripts/train_smoke.sh                     # train artifacts/smoke_20bb.mako (~2 min, ≤300 s cap)
-cargo run --release -p mako-cli -- --depth 20 --hands 10   # play against it
+scripts/train_smoke.sh                     # train artifacts/smoke_20bb.pokerbot (~2 min, ≤300 s cap)
+cargo run --release -p pokerbot-cli -- --depth 20 --hands 10   # play against it
 ```
 
-Without a trained artifact, `mako --bot auto` falls back to an untrained
+Without a trained artifact, `pokerbot --bot auto` falls back to an untrained
 baseline bot and says so in a loud `!!` banner. `--bot cfr` refuses to start
 instead. The trained policy is never silently replaced.
 
@@ -32,13 +32,13 @@ instead. The trained policy is never silently replaced.
 
 | Path | Purpose |
 |------|---------|
-| `crates/mako-core` | Cards, seeded deck/RNG, 7-card evaluator, hand state machine, per-seat observations, event log/replay |
-| `crates/mako-cfr` | Kuhn-poker CFR reference, preflop/postflop abstraction, ES-MCCFR trainer with linear averaging, checkpoints, `.mako` artifact format, `mako-train` binary, inference agent |
-| `crates/mako-cli` | `mako` terminal game: retro table, coach/analysis, hand replay, history and stats, difficulty blends, experimental `--adapt` |
-| `crates/mako-analysis` | History store, stats, equity, coach, opponent model |
-| `crates/mako-eval` | `mako-eval`: paired-seed, seat-swapped evaluation against rule-bot baselines with confidence intervals and a pre-registered promotion gate |
-| `crates/mako-wasm` | wasm-bindgen bridge exposing only public state to JavaScript |
-| `packages/mako-browser` | Browser client (Web Worker) and `<MakoTable>` React component |
+| `crates/pokerbot-core` | Cards, seeded deck/RNG, 7-card evaluator, hand state machine, per-seat observations, event log/replay |
+| `crates/pokerbot-cfr` | Kuhn-poker CFR reference, preflop/postflop abstraction, ES-MCCFR trainer with linear averaging, checkpoints, `.pokerbot` artifact format, `pokerbot-train` binary, inference agent |
+| `crates/pokerbot-cli` | `pokerbot` terminal game: retro table, coach/analysis, hand replay, history and stats, difficulty blends, experimental `--adapt` |
+| `crates/pokerbot-analysis` | History store, stats, equity, coach, opponent model |
+| `crates/pokerbot-eval` | `pokerbot-eval`: paired-seed, seat-swapped evaluation against rule-bot baselines with confidence intervals and a pre-registered promotion gate |
+| `crates/pokerbot-wasm` | wasm-bindgen bridge exposing only public state to JavaScript |
+| `packages/pokerbot-browser` | Browser client (Web Worker) and `<PokerbotTable>` React component |
 | `examples/react-demo` | Vite demo app and headless-Chrome smoke test |
 | `configs/` | Training and evaluation configs (`smoke.toml`, `eval_smoke.toml`, `eval_adaptive*.toml`, `ci_tiny.toml`) |
 | `docs/` | Specifications and per-component guides (below) |
@@ -46,10 +46,10 @@ instead. The trained policy is never silently replaced.
 ### Architecture
 
 ```
-mako-core ──► mako-cfr ──► mako-analysis ──► mako-eval
+pokerbot-core ──► pokerbot-cfr ──► pokerbot-analysis ──► pokerbot-eval
     │            │              │
-    ├────────────┴──────────────┴──► mako-cli (native terminal game)
-    └────────────┴─────────────────► mako-wasm ──► packages/mako-browser ──► examples/react-demo
+    ├────────────┴──────────────┴──► pokerbot-cli (native terminal game)
+    └────────────┴─────────────────► pokerbot-wasm ──► packages/pokerbot-browser ──► examples/react-demo
 ```
 
 The engine is the single source of truth for rules. Agents, the terminal UI
@@ -64,8 +64,8 @@ decisions.
 | Doc | Contents |
 |-----|----------|
 | [`docs/GAME_RULES.md`](docs/GAME_RULES.md) | Exact heads-up NLHE rules implemented (blinds, min-raise, all-in, side cases) |
-| [`docs/CLI.md`](docs/CLI.md) | Every `mako` flag and in-game command, replay, colour/width |
-| [`docs/STRATEGY_FORMAT.md`](docs/STRATEGY_FORMAT.md) | `.mako` artifact layout, checksums, abstraction fingerprint |
+| [`docs/CLI.md`](docs/CLI.md) | Every `pokerbot` flag and in-game command, replay, colour/width |
+| [`docs/STRATEGY_FORMAT.md`](docs/STRATEGY_FORMAT.md) | `.pokerbot` artifact layout, checksums, abstraction fingerprint |
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | Evaluation methodology, results, limitations |
 | [`docs/WEB_INTEGRATION.md`](docs/WEB_INTEGRATION.md) | WASM API, hidden-information contract, React/Next.js embedding |
 | [`docs/PROGRESS.md`](docs/PROGRESS.md) / [`docs/TASKS.json`](docs/TASKS.json) | Task-by-task build log with QA evidence |
@@ -79,7 +79,7 @@ scripts/train_smoke.sh                                   # configs/smoke.toml: 2
 scripts/train_smoke.sh --resume artifacts/smoke_20bb.ckpt
 ```
 
-Outputs go to `artifacts/` (gitignored): `smoke_20bb.mako`, `.ckpt` and a
+Outputs go to `artifacts/` (gitignored): `smoke_20bb.pokerbot`, `.ckpt` and a
 `.manifest.json` recording iterations, seed, checksum and abstraction
 fingerprint. Only a 20BB smoke config ships. `--depth 50/100` play the
 baseline bot unless you train an artifact for that depth.
@@ -87,14 +87,14 @@ baseline bot unless you train an artifact for that depth.
 **Play**: see [`docs/CLI.md`](docs/CLI.md). Every session prints its seed and
 a replay command. `--difficulty training|balanced|challenging` blends the
 policy with uniform-random legal play. `--no-history` keeps stats in memory,
-and `--history <path>` / `MAKO_HOME` choose where they are saved (default
-`~/.mako/`).
+and `--history <path>` / `POKERBOT_HOME` choose where they are saved (default
+`~/.pokerbot/`).
 
 **Evaluate**:
 
 ```sh
-cargo run --release -p mako-eval -- --smoke              # configs/eval_smoke.toml, ~20k hands
-cargo run --release -p mako-eval -- --config <file.toml> --json out.json
+cargo run --release -p pokerbot-eval -- --smoke              # configs/eval_smoke.toml, ~20k hands
+cargo run --release -p pokerbot-eval -- --config <file.toml> --json out.json
 ```
 
 Results are deterministic for a given config. For the adaptive comparison,
@@ -106,11 +106,11 @@ and `docs/PROGRESS.md`.
 **Embed in a website**:
 
 Needs Node ≥ 22 with npm, `wasm-pack` 0.15.1 (`cargo install wasm-pack
---version 0.15.1 --locked`), a trained `artifacts/smoke_20bb.mako` (above), and
+--version 0.15.1 --locked`), a trained `artifacts/smoke_20bb.pokerbot` (above), and
 Google Chrome for the smoke test. `npm ci` needs network access.
 
 ```sh
-(cd packages/mako-browser && npm ci)   # the component's own react types
+(cd packages/pokerbot-browser && npm ci)   # the component's own react types
 cd examples/react-demo
 npm ci
 npm run build      # wasm-pack --target web → copy policy → tsc → vite build
@@ -118,8 +118,8 @@ npm run smoke      # headless local Chrome full-hand smoke
 npm run preview    # http://127.0.0.1:4173
 ```
 
-`docs/WEB_INTEGRATION.md` covers the `mako-browser` package, the `<MakoTable>`
-props, serving the `.mako` file, and Next.js App Router notes. The Next.js
+`docs/WEB_INTEGRATION.md` covers the `pokerbot-browser` package, the `<PokerbotTable>`
+props, serving the `.pokerbot` file, and Next.js App Router notes. The Next.js
 steps have not been tested in a real Next.js app. The wasm module is about
 145 KB (65 KB gzipped) and the smoke policy about 891 KB, fetched on demand.
 
@@ -134,14 +134,12 @@ make clean-clone   # ci-local in a fresh `git archive HEAD` export with its own 
 `ci-local` writes a summary table and log under `target/ci-local/`. Steps that
 need something absent (no local Chrome, no trained artifact) print a loud
 `!! SKIPPED` banner and appear as `SKIP` in the summary. A run whose only
-non-PASS steps are SKIPs still exits 0, so read the summary.
-`.github/workflows/ci.yml` runs every `ci_local.sh` step, from fmt to the browser
-smoke, and trains the smoke artifact first. It has not been run remotely, since
-nothing has been pushed.
+non-PASS steps are SKIPs still exits 0, so read the summary. There is no hosted
+CI workflow; these checks are run locally.
 
 ## Benchmark results (smoke policy, 20BB)
 
-From `mako-eval --smoke` on the committed config (BB/100, 95% CI):
+From `pokerbot-eval --smoke` on the committed config (BB/100, 95% CI):
 
 | Opponent | Result |
 |----------|--------|

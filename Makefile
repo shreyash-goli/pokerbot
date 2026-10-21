@@ -25,7 +25,7 @@ ci: fmt-check check clippy test validate
 
 # Full local CI (M-24): Rust checks, python task checks, binary/wasm/browser
 # end-to-end steps; see scripts/ci_local.sh. ARGS=--with-smoke-training
-# trains the smoke policy if artifacts/smoke_20bb.mako is absent.
+# trains the smoke policy if artifacts/smoke_20bb.pokerbot is absent.
 ci-local:
 	scripts/ci_local.sh $(ARGS)
 

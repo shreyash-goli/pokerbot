@@ -1,0 +1,21 @@
+[package]
+name = "pokerbot-cli"
+description = "Retro terminal heads-up hold'em game"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pokerbot"
+path = "src/main.rs"
+
+[dependencies]
+pokerbot-core = { path = "../pokerbot-core" }
+pokerbot-cfr = { path = "../pokerbot-cfr" }
+pokerbot-analysis = { path = "../pokerbot-analysis" }
+
+[lints]
+workspace = true

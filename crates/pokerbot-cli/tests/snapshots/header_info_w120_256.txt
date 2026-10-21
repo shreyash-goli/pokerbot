@@ -1,0 +1,9 @@
+  \e[1;38;5;222m█▀█ █▀█ █ █ █▀▀ █▀█ █▀▄ █▀█ ▀█▀\e[0m
+  \e[1;38;5;222m█▀▀ █ █ █▀▄ █▀▀ █▀▄ █▀▄ █ █  █ \e[0m   \e[38;5;187mPokerbot 0.1.0 · heads-up no-limit hold'em\e[0m
+  \e[1;38;5;222m▀   ▀▀▀ ▀ ▀ ▀▀▀ ▀ ▀ ▀▀  ▀▀▀  ▀ \e[0m
+\e[38;5;137m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[0m
+Opponent: CFR policy -- cfr 20BB (500k it): smoke: trained for plumbing, not competition
+  artifact artifacts/smoke_20bb.pokerbot | checksum 0xd2767c7dad569fdd | 39741 infosets
+Session seed 7 | 5 hand(s) | 20 BB deep (40 chips) | blinds 1/2
+Replay: pokerbot --seed 7 --hands 5 --depth 20 --bot auto --strategy artifacts/smoke_20bb.pokerbot
+\e[38;5;101mType 'help' at any prompt for the commands.\e[0m
